@@ -23,7 +23,7 @@ const ShopHeader = () => {
             <div className="w-2 h-2 bg-white rounded-sm"></div>
             <div className="w-2 h-2 bg-white rounded-sm"></div>
           </div>
-          <span className="text-xs sm:text-sm font-medium">Browse Demos</span>
+          <span className="text-xs sm:text-sm font-medium">Start Here</span>
         </button>
 
         <button className="flex items-center space-x-2 bg-black bg-opacity-30 backdrop-blur-sm text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg border border-white border-opacity-40 hover:bg-opacity-40 transition-all duration-300 touch-manipulation">
