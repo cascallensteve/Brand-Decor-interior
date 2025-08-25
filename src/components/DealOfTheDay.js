@@ -32,17 +32,32 @@ const DealOfTheDay = () => {
   }, []);
 
   useEffect(() => {
+    // Set a fixed end date (e.g., end of current month)
+    const now = new Date();
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    
     const timer = setInterval(() => {
-      const now = new Date().getTime();
-      const endTime = now + (2 * 24 * 60 * 60 * 1000); // 2 days from now
-      const distance = endTime - now;
+      const currentTime = new Date().getTime();
+      const distance = endOfMonth.getTime() - currentTime;
 
-      setTimeLeft({
-        days: Math.floor(distance / (1000 * 60 * 60 * 24)),
-        hours: Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
-        minutes: Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60)),
-        seconds: Math.floor((distance % (1000 * 60)) / 1000)
-      });
+      if (distance > 0) {
+        setTimeLeft({
+          days: Math.floor(distance / (1000 * 60 * 60 * 24)),
+          hours: Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
+          minutes: Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60)),
+          seconds: Math.floor((distance % (1000 * 60)) / 1000)
+        });
+      } else {
+        // Reset to next month when timer expires
+        const nextMonth = new Date(now.getFullYear(), now.getMonth() + 2, 0, 23, 59, 59);
+        const newDistance = nextMonth.getTime() - currentTime;
+        setTimeLeft({
+          days: Math.floor(newDistance / (1000 * 60 * 60 * 24)),
+          hours: Math.floor((newDistance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
+          minutes: Math.floor((newDistance % (1000 * 60 * 60)) / (1000 * 60)),
+          seconds: Math.floor((newDistance % (1000 * 60)) / 1000)
+        });
+      }
     }, 1000);
 
     return () => clearInterval(timer);

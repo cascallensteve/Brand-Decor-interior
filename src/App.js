@@ -20,6 +20,11 @@ import Cart from './pages/Cart';
 import Checkout from './pages/Checkout';
 import Charity from './pages/Charity';
 import Login from './pages/Login';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsConditions from './pages/TermsConditions';
+import DeliveryInfo from './pages/DeliveryInfo';
+import Returns from './pages/Returns';
+import Company from './pages/Company';
 
 function App() {
   return (
@@ -51,6 +56,11 @@ function App() {
             <Route path="/checkout" element={<Checkout />} />
             <Route path="/charity" element={<Charity />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/terms-conditions" element={<TermsConditions />} />
+            <Route path="/delivery-info" element={<DeliveryInfo />} />
+            <Route path="/returns" element={<Returns />} />
+            <Route path="/company" element={<Company />} />
           </Routes>
         </div>
         </Router>

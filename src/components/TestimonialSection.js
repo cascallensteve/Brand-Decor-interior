@@ -27,22 +27,22 @@ const TestimonialSection = () => {
 
   const testimonials = [
     {
-      name: "Sarah Johnson",
+      name: "Billy Josiah",
       review: "Amazing quality and fast delivery! The sofa exceeded my expectations.",
-      rating: 5,
-      image: "https://images.unsplash.com/photo-1494790108755-2616b612b5f8?ixlib=rb-4.0.3&auto=format&fit=crop&w=150&q=80"
-    },
-    {
-      name: "Michael Chen",
-      review: "Perfect furniture for our new home. Great customer service too!",
       rating: 5,
       image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=150&q=80"
     },
     {
-      name: "Emily Davis",
-      review: "Love the modern design and comfort. Highly recommend!",
+      name: "Steve Casscallen",
+      review: "Perfect furniture for our new home. Great customer service too!",
       rating: 5,
-      image: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?ixlib=rb-4.0.3&auto=format&fit=crop&w=150&q=80"
+      image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?ixlib=rb-4.0.3&auto=format&fit=crop&w=150&q=80"
+    },
+    {
+      name: "Technova",
+      review: "Love the modern design and comfort. Highly recommend Brand Decor!",
+      rating: 5,
+      image: "https://images.unsplash.com/photo-1494790108755-2616b612b5f8?ixlib=rb-4.0.3&auto=format&fit=crop&w=150&q=80"
     }
   ];
 

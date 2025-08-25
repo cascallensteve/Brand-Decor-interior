@@ -89,9 +89,9 @@ const Footer = () => {
             <div>
               <h3 className="font-bold text-gray-800 text-lg mb-6">Quick Links</h3>
               <ul className="space-y-3">
-                <li><a href="/privacy" className="text-gray-600 hover:text-orange-500 transition-colors">Privacy Policy</a></li>
-                <li><a href="/terms" className="text-gray-600 hover:text-orange-500 transition-colors">Terms & Conditions</a></li>
-                <li><a href="/delivery" className="text-gray-600 hover:text-orange-500 transition-colors">Delivery Info</a></li>
+                <li><a href="/privacy-policy" className="text-gray-600 hover:text-orange-500 transition-colors">Privacy Policy</a></li>
+                <li><a href="/terms-conditions" className="text-gray-600 hover:text-orange-500 transition-colors">Terms & Conditions</a></li>
+                <li><a href="/delivery-info" className="text-gray-600 hover:text-orange-500 transition-colors">Delivery Info</a></li>
                 <li><a href="/returns" className="text-gray-600 hover:text-orange-500 transition-colors">Returns</a></li>
               </ul>
             </div>
@@ -100,10 +100,11 @@ const Footer = () => {
             <div>
               <h3 className="font-bold text-gray-800 text-lg mb-6">Company</h3>
               <ul className="space-y-3">
-                <li><a href="/" className="text-gray-600 hover:text-orange-500 transition-colors">Home – Old</a></li>
+                <li><a href="/" className="text-gray-600 hover:text-orange-500 transition-colors">Home</a></li>
                 <li><a href="/shop" className="text-gray-600 hover:text-orange-500 transition-colors">Shop</a></li>
                 <li><a href="/about" className="text-gray-600 hover:text-orange-500 transition-colors">About</a></li>
                 <li><a href="/contact" className="text-gray-600 hover:text-orange-500 transition-colors">Contact</a></li>
+                <li><a href="/company" className="text-gray-600 hover:text-orange-500 transition-colors">Company</a></li>
               </ul>
             </div>
 
