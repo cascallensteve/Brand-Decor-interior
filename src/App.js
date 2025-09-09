@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { CartProvider } from './context/CartContext';
 import { SearchProvider } from './context/SearchContext';
+import { AuthProvider } from './context/AuthContext';
 import TopNavbar from './components/TopNavbar';
 import MainHeader from './components/MainHeader';
 import HeroSection from './components/HeroSection';
@@ -20,6 +21,9 @@ import Cart from './pages/Cart';
 import Checkout from './pages/Checkout';
 import Charity from './pages/Charity';
 import Login from './pages/Login';
+import Profile from './pages/Profile';
+import AdminSignup from './pages/AdminSignup';
+import Logout from './pages/Logout';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsConditions from './pages/TermsConditions';
 import DeliveryInfo from './pages/DeliveryInfo';
@@ -33,12 +37,18 @@ import {
   Orders, 
   Settings 
 } from './admin';
+import VerifyEmail from './pages/VerifyEmail';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
+import ProtectedRoute from './components/ProtectedRoute';
+import PublicRoute from './components/PublicRoute';
 
 function App() {
   return (
-    <CartProvider>
-      <SearchProvider>
-        <Router>
+    <AuthProvider>
+      <CartProvider>
+        <SearchProvider>
+          <Router>
         <div className="App">
           <Routes>
             <Route path="/" element={
@@ -60,10 +70,44 @@ function App() {
             <Route path="/shop" element={<Shop />} />
             <Route path="/about" element={<About />} />
             <Route path="/contact" element={<Contact />} />
-            <Route path="/cart" element={<Cart />} />
-            <Route path="/checkout" element={<Checkout />} />
+            <Route path="/cart" element={
+              <ProtectedRoute>
+                <Cart />
+              </ProtectedRoute>
+            } />
+            <Route path="/checkout" element={
+              <ProtectedRoute>
+                <Checkout />
+              </ProtectedRoute>
+            } />
             <Route path="/charity" element={<Charity />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/admin-signup" element={
+              <PublicRoute>
+                <AdminSignup />
+              </PublicRoute>
+            } />
+            <Route path="/profile" element={
+              <ProtectedRoute>
+                <Profile />
+              </ProtectedRoute>
+            } />
+            <Route path="/logout" element={<Logout />} />
+            <Route path="/verify-email" element={
+              <PublicRoute>
+                <VerifyEmail />
+              </PublicRoute>
+            } />
+            <Route path="/forgot-password" element={
+              <PublicRoute>
+                <ForgotPassword />
+              </PublicRoute>
+            } />
+            <Route path="/reset-password" element={
+              <PublicRoute>
+                <ResetPassword />
+              </PublicRoute>
+            } />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/terms-conditions" element={<TermsConditions />} />
             <Route path="/delivery-info" element={<DeliveryInfo />} />
@@ -72,8 +116,9 @@ function App() {
             
             {/* Admin Routes */}
             <Route path="/admin" element={
-              // Add authentication check here
-              true ? <AdminLayout /> : <Navigate to="/login" />
+              <ProtectedRoute adminOnly={true}>
+                <AdminLayout />
+              </ProtectedRoute>
             }>
               <Route index element={<Dashboard />} />
               <Route path="dashboard" element={<Dashboard />} />
@@ -85,9 +130,10 @@ function App() {
             </Route>
           </Routes>
         </div>
-        </Router>
-      </SearchProvider>
-    </CartProvider>
+          </Router>
+        </SearchProvider>
+      </CartProvider>
+    </AuthProvider>
   );
 }
 

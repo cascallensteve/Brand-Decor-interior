@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
-import { FaHome, FaBox, FaUsers, FaClipboardList, FaCog, FaSignOutAlt, FaBars, FaTimes } from 'react-icons/fa';
+import { FaHome, FaBox, FaUsers, FaClipboardList, FaCog, FaSignOutAlt, FaBars, FaTimes, FaBell, FaChevronDown } from 'react-icons/fa';
 import { Link, Outlet } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 
 const AdminLayout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const { user, logout } = useAuth();
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
@@ -23,6 +27,26 @@ const AdminLayout = () => {
     { icon: <FaBox />, label: 'Sizes', id: 'sizes', path: '/admin/sizes' },
     { icon: <FaBox />, label: 'Coupons', id: 'coupons', path: '/admin/coupons' },
   ];
+
+  const notifications = [
+    { id: 1, title: 'New order received', time: '2m ago' },
+    { id: 2, title: 'Low stock: 3 items', time: '1h ago' },
+    { id: 3, title: 'New user signed up', time: '3h ago' },
+  ];
+
+  const getUserInitials = () => {
+    const first = user?.first_name || user?.name?.split(' ')[0] || '';
+    const last = user?.last_name || user?.name?.split(' ')[1] || '';
+    const initials = `${first?.[0] || ''}${last?.[0] || ''}`.toUpperCase();
+    return initials || 'AD';
+  };
+
+  const displayName = () => {
+    if (user?.first_name || user?.last_name) {
+      return `${user?.first_name || ''} ${user?.last_name || ''}`.trim();
+    }
+    return user?.name || user?.email || 'Admin';
+  };
 
   return (
     <div className="flex h-screen bg-gray-100">
@@ -78,7 +102,7 @@ const AdminLayout = () => {
 
         {/* Logout button at the bottom */}
         <div className="absolute bottom-0 w-full border-t border-gray-700 p-4">
-          <button className="flex w-full items-center space-x-3 rounded-lg px-4 py-3 text-left text-gray-300 transition-colors duration-200 hover:bg-gray-800">
+          <button onClick={() => logout()} className="flex w-full items-center space-x-3 rounded-lg px-4 py-3 text-left text-gray-300 transition-colors duration-200 hover:bg-gray-800">
             <FaSignOutAlt className="text-lg" />
             <span>Logout</span>
           </button>
@@ -119,12 +143,70 @@ const AdminLayout = () => {
               </svg>
             </div>
             
-            <div className="h-8 w-8 overflow-hidden rounded-full bg-gray-200">
-              <img
-                src="https://ui-avatars.com/api/?name=Admin&background=3B82F6&color=fff"
-                alt="Admin"
-                className="h-full w-full object-cover"
-              />
+            {/* Notification bell */}
+            <div className="relative">
+              <button
+                onClick={() => setIsNotifOpen(!isNotifOpen)}
+                className="relative rounded-full p-2 text-gray-600 hover:bg-gray-100"
+                aria-label="Notifications"
+              >
+                <FaBell className="h-5 w-5" />
+                {notifications.length > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-xs font-semibold text-white">
+                    {notifications.length}
+                  </span>
+                )}
+              </button>
+
+              {isNotifOpen && (
+                <div className="absolute right-0 z-50 mt-2 w-72 rounded-lg border border-gray-200 bg-white shadow-lg">
+                  <div className="flex items-center justify-between border-b px-4 py-2">
+                    <span className="text-sm font-semibold">Notifications</span>
+                    <button onClick={() => setIsNotifOpen(false)} className="text-xs text-blue-600 hover:underline">Close</button>
+                  </div>
+                  <ul className="max-h-64 overflow-auto py-2">
+                    {notifications.map((n) => (
+                      <li key={n.id} className="px-4 py-2 hover:bg-gray-50">
+                        <p className="text-sm text-gray-800">{n.title}</p>
+                        <p className="text-xs text-gray-500">{n.time}</p>
+                      </li>
+                    ))}
+                    {notifications.length === 0 && (
+                      <li className="px-4 py-6 text-center text-sm text-gray-500">No notifications</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {/* Profile dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setIsProfileOpen(!isProfileOpen)}
+                className="flex items-center space-x-2 rounded-lg border border-gray-200 bg-white px-2 py-1 hover:bg-gray-50"
+              >
+                <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-blue-600 text-sm font-semibold text-white">
+                  {getUserInitials()}
+                </div>
+                <div className="hidden sm:block text-left">
+                  <div className="text-sm font-medium text-gray-800 leading-tight">{displayName()}</div>
+                  <div className="text-xs text-gray-500 -mt-0.5">{user?.userType || 'admin'}</div>
+                </div>
+                <FaChevronDown className="h-3.5 w-3.5 text-gray-500" />
+              </button>
+
+              {isProfileOpen && (
+                <div className="absolute right-0 z-50 mt-2 w-64 rounded-lg border border-gray-200 bg-white shadow-lg">
+                  <div className="border-b px-4 py-3">
+                    <p className="text-sm font-semibold text-gray-800">{displayName()}</p>
+                    <p className="text-xs text-gray-500">{user?.email}</p>
+                  </div>
+                  <div className="px-2 py-2">
+                    <Link to="/profile" className="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">View Profile</Link>
+                    <button onClick={() => logout()} className="block w-full rounded-md px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50">Logout</button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </header>

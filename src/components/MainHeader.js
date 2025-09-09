@@ -2,12 +2,15 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useSearch } from '../context/SearchContext';
+import { useAuth } from '../context/AuthContext';
 import SearchModal from './SearchModal';
+import UserProfileDropdown from './UserProfileDropdown';
 
 const MainHeader = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { getTotalItems } = useCart();
   const { openSearch } = useSearch();
+  const { isAuthenticated } = useAuth();
 
   const toggleMobileMenu = () => {
     setIsMobileMenuOpen(!isMobileMenuOpen);
@@ -74,15 +77,19 @@ const MainHeader = () => {
 
         {/* User Actions + Mobile Menu Toggle */}
         <div className="flex items-center space-x-2 sm:space-x-4">
-          {/* Login */}
-          <Link to="/login" className="flex items-center space-x-2 text-gray-700 hover:text-orange-500 transition-colors group">
-            <div className="relative">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-            </div>
-            <span className="hidden md:inline font-medium">Login</span>
-          </Link>
+          {/* User Profile or Login */}
+          {isAuthenticated() ? (
+            <UserProfileDropdown />
+          ) : (
+            <Link to="/login" className="flex items-center space-x-2 text-gray-700 hover:text-orange-500 transition-colors group">
+              <div className="relative">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </div>
+              <span className="hidden md:inline font-medium">Login</span>
+            </Link>
+          )}
 
           {/* Separator */}
           <span className="text-gray-300 hidden md:inline">|</span>
@@ -197,13 +204,19 @@ const MainHeader = () => {
                     </span>
                   )}
                 </Link>
-                <Link 
-                  to="/login" 
-                  className="text-gray-900 hover:text-orange-500 transition-colors font-medium py-3 hover:pl-2 transform transition-all duration-200 text-lg"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  Login
-                </Link>
+                {isAuthenticated() ? (
+                  <div className="py-3 border-b border-gray-100">
+                    <UserProfileDropdown />
+                  </div>
+                ) : (
+                  <Link 
+                    to="/login" 
+                    className="text-gray-900 hover:text-orange-500 transition-colors font-medium py-3 hover:pl-2 transform transition-all duration-200 text-lg"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    Login
+                  </Link>
+                )}
               </nav>
             </div>
           </div>

@@ -2,6 +2,15 @@ import React, { useState } from 'react';
 import TopNavbar from '../components/TopNavbar';
 import MainHeader from '../components/MainHeader';
 import Footer from '../components/Footer';
+import WelcomeModal from '../components/WelcomeModal';
+import SignupSuccessModal from '../components/SignupSuccessModal';
+import PublicRoute from '../components/PublicRoute';
+import { useAuth } from '../context/AuthContext';
+import { signUp, login, adminSignUp } from '../services/api';
+import { useNavigate } from 'react-router-dom';
+import { Eye, EyeOff } from 'lucide-react'; // ✅ install lucide-react for icons
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 const LoginHeader = () => {
   return (
@@ -24,6 +33,7 @@ const LoginHeader = () => {
 
 const Login = () => {
   const [isLogin, setIsLogin] = useState(true);
+  const [isAdminSignUp, setIsAdminSignUp] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -32,11 +42,77 @@ const Login = () => {
     lastName: '',
     phone: ''
   });
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false); // 👁 toggle for password
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false); // 👁 toggle for confirm
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [welcomeUser, setWelcomeUser] = useState({ name: '', email: '' });
+  const [showSignupSuccess, setShowSignupSuccess] = useState(false);
+  const [signupEmail, setSignupEmail] = useState('');
+  const { login: authLogin } = useAuth();
+  const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Form submitted:', formData);
-    // Add authentication logic here
+
+    try {
+      setLoading(true);
+
+      if (isLogin) {
+        const response = await login({
+          email: formData.email,
+          password: formData.password,
+        });
+
+        console.log("Login Success:", response);
+
+        // Use AuthContext to store user data
+        authLogin(response.user, response.token);
+
+        // If admin and not verified, force email verification
+        if ((response.user.userType === 'admin' || response.user.role === 'admin') && !response.user.is_email_verified) {
+          navigate(`/verify-email?email=${encodeURIComponent(response.user.email)}`);
+          return;
+        }
+
+        // Check if user is admin and redirect accordingly
+        if (response.user.userType === 'admin' || response.user.role === 'admin') {
+          navigate('/admin');
+          return;
+        }
+
+        // Show welcome modal for regular users
+        setWelcomeUser({
+          name: response.user.first_name || response.user.name || 'User',
+          email: response.user.email
+        });
+        setShowWelcomeModal(true);
+        toast.success('Signed in successfully!', { autoClose: 3000 });
+
+      } else {
+        if (formData.password !== formData.confirmPassword) {
+          toast.error('Passwords do not match!', { autoClose: 4000 });
+          return;
+        }
+
+        if (isAdminSignUp) {
+          const response = await adminSignUp(formData);
+          console.log("Admin Sign Up Success:", response);
+          setSignupEmail(formData.email);
+          setShowSignupSuccess(true);
+        } else {
+          const response = await signUp(formData);
+          console.log("Sign Up Success:", response);
+          setSignupEmail(formData.email);
+          setShowSignupSuccess(true);
+        }
+      }
+    } catch (error) {
+      console.error("Error:", error.message);
+      toast.error(error.message || 'Something went wrong. Please try again.', { autoClose: 5000 });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleChange = (e) => {
@@ -46,11 +122,23 @@ const Login = () => {
     });
   };
 
+  const handleWelcomeModalClose = () => {
+    setShowWelcomeModal(false);
+    // Navigate to home page after welcome modal closes
+    navigate('/');
+  };
+
+  const handleSignupSuccessClose = () => {
+    setShowSignupSuccess(false);
+    navigate(`/verify-email?email=${encodeURIComponent(signupEmail)}`);
+  };
+
   return (
-    <div className="App">
-      <TopNavbar />
-      <MainHeader />
-      <LoginHeader />
+    <PublicRoute>
+      <div className="App">
+        <TopNavbar />
+        <MainHeader />
+        <LoginHeader />
       
       <div className="min-h-screen bg-gray-50 py-8 sm:py-12">
         <div className="max-w-md mx-auto px-4 sm:px-6">
@@ -96,6 +184,23 @@ const Login = () => {
               <form onSubmit={handleSubmit} className="space-y-4">
                 {!isLogin && (
                   <>
+                    {/* Admin sign up toggle */}
+                    <div className="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-lg p-3">
+                      <div>
+                        <p className="text-sm font-medium text-orange-700">Sign up as Admin</p>
+                        <p className="text-xs text-orange-600">Admins will access the dashboard after verification.</p>
+                      </div>
+                      <label className="inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isAdminSignUp}
+                          onChange={(e) => setIsAdminSignUp(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:h-5 after:w-5 after:bg-white after:border-gray-300 after:border after:rounded-full after:transition-all peer-checked:bg-orange-500"></div>
+                      </label>
+                    </div>
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -157,35 +262,50 @@ const Login = () => {
                   />
                 </div>
 
-                <div>
+                {/* Password with toggle */}
+                <div className="relative">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Password
                   </label>
                   <input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     name="password"
                     value={formData.password}
                     onChange={handleChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-colors"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-colors pr-10"
                     placeholder="••••••••"
                     required
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-3 flex items-center text-gray-500 hover:text-gray-700 mt-6"
+                  >
+                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
                 </div>
 
                 {!isLogin && (
-                  <div>
+                  <div className="relative">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Confirm Password
                     </label>
                     <input
-                      type="password"
+                      type={showConfirmPassword ? "text" : "password"}
                       name="confirmPassword"
                       value={formData.confirmPassword}
                       onChange={handleChange}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-colors"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-colors pr-10"
                       placeholder="••••••••"
                       required={!isLogin}
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute inset-y-0 right-3 flex items-center text-gray-500 hover:text-gray-700 mt-6"
+                    >
+                      {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                    </button>
                   </div>
                 )}
 
@@ -195,7 +315,11 @@ const Login = () => {
                       <input type="checkbox" className="w-4 h-4 text-orange-500 bg-gray-100 border-gray-300 rounded focus:ring-orange-500" />
                       <span className="ml-2 text-sm text-gray-600">Remember me</span>
                     </label>
-                    <button type="button" className="text-sm text-orange-500 hover:text-orange-600 transition-colors focus:outline-none">
+                    <button 
+                      type="button" 
+                      onClick={() => navigate('/forgot-password')}
+                      className="text-sm text-orange-500 hover:text-orange-600 transition-colors focus:outline-none"
+                    >
                       Forgot password?
                     </button>
                   </div>
@@ -203,12 +327,12 @@ const Login = () => {
 
                 <button
                   type="submit"
+                  disabled={loading}
                   className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3 px-6 rounded-lg font-medium transition-colors touch-manipulation"
                 >
-                  {isLogin ? 'Sign In' : 'Create Account'}
+                  {loading ? "Please wait..." : (isLogin ? 'Sign In' : (isAdminSignUp ? 'Create Admin Account' : 'Create Account'))}
                 </button>
               </form>
-
               {/* Social Login */}
               <div className="mt-6">
                 <div className="relative">
@@ -252,7 +376,7 @@ const Login = () => {
             </div>
           </div>
 
-          {/* Additional Info */}
+          {/* Toggle Link */}
           <div className="mt-8 text-center">
             <p className="text-gray-600">
               {isLogin ? "Don't have an account? " : "Already have an account? "}
@@ -268,7 +392,22 @@ const Login = () => {
       </div>
       
       <Footer />
-    </div>
+      
+      {/* Welcome Modal */}
+      <WelcomeModal
+        isOpen={showWelcomeModal}
+        onClose={handleWelcomeModalClose}
+        userName={welcomeUser.name}
+        userEmail={welcomeUser.email}
+      />
+      <SignupSuccessModal
+        isOpen={showSignupSuccess}
+        onClose={handleSignupSuccessClose}
+        email={signupEmail}
+      />
+      <ToastContainer position="top-right" autoClose={5000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="light" />
+      </div>
+    </PublicRoute>
   );
 };
 
