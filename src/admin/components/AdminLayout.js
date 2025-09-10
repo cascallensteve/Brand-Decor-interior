@@ -65,11 +65,11 @@ const AdminLayout = () => {
         <div className="flex h-16 items-center justify-between border-b border-gray-700 px-4">
           <Link to="/" className="flex items-center space-x-2">
             <img 
-              src="/logo192.png" 
-              alt="BrandDecor Logo" 
-              className="h-10 w-10"
+              src="/logo.png" 
+              alt="Brand Decor Logo" 
+              className="h-10 w-10 object-contain"
             />
-            <span className="text-xl font-bold">BrandDecor</span>
+            <span className="text-xl font-bold">Brand Decor</span>
           </Link>
           <button 
             onClick={toggleSidebar}
@@ -202,7 +202,7 @@ const AdminLayout = () => {
                     <p className="text-xs text-gray-500">{user?.email}</p>
                   </div>
                   <div className="px-2 py-2">
-                    <Link to="/profile" className="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">View Profile</Link>
+                    <Link to="/admin/profile" className="block rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100">View Profile</Link>
                     <button onClick={() => logout()} className="block w-full rounded-md px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50">Logout</button>
                   </div>
                 </div>

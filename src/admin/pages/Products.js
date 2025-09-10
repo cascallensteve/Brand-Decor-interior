@@ -21,7 +21,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import { addItem, editItem, getAllItems, getItemDetails } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 
 export default function Products() {
@@ -36,10 +36,12 @@ export default function Products() {
     name: '',
     description: '',
     category: 'Bedroom',
+    sub_category: '',
     price: '',
     photo: ''
   });
-  const [uploadedImages, setUploadedImages] = useState([]);
+  // Locally uploaded files (from computer) with names; do not auto-fill URL field
+  const [uploadedFiles, setUploadedFiles] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isViewAllModalOpen, setIsViewAllModalOpen] = useState(false);
@@ -50,6 +52,32 @@ export default function Products() {
   const [itemDetails, setItemDetails] = useState(null);
   const [isLoadingItemDetails, setIsLoadingItemDetails] = useState(false);
   const { user: currentUser, isAdmin, getToken } = useAuth();
+
+  // Inline SVG placeholders to avoid network calls and onError loops
+  const FALLBACK_IMG_48 = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="100%" height="100%" fill="%23f3f4f6"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-size="8" fill="%239ca3af">Image</text></svg>';
+  const FALLBACK_IMG_40 = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="100%" height="100%" fill="%23f3f4f6"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-size="8" fill="%239ca3af">Image</text></svg>';
+  const FALLBACK_IMG_192 = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192"><rect width="100%" height="100%" fill="%23f3f4f6"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-size="18" fill="%239ca3af">Image</text></svg>';
+
+  // Normalize API photo field: fix cases like "image/upload/https://..." and accept data URLs
+  const normalizePhotoValue = (value) => {
+    if (!value || typeof value !== 'string') return '';
+    const trimmed = value.trim();
+    if (trimmed.startsWith('data:image')) return trimmed; // base64/data URL
+    // If API returned a malformed cloudinary string like 'image/upload/https://...'
+    if (trimmed.startsWith('image/upload/https://') || trimmed.startsWith('image/upload/http://')) {
+      return trimmed.replace(/^image\/upload\//, '');
+    }
+    return trimmed;
+  };
+
+  // Normalize sub category across possible backend keys
+  const normalizeSubCategory = (item) => {
+    const candidates = [item.sub_category, item.subCategory, item.subcategory, item.sub_cat, item.subCat];
+    for (const v of candidates) {
+      if (typeof v === 'string' && v.trim() !== '') return v.trim();
+    }
+    return '';
+  };
 
   const filteredProducts = products.filter(product =>
     product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -76,17 +104,16 @@ export default function Products() {
       const mappedProducts = response.items.map(item => {
         console.log('🔄 Mapping item:', item.id, item.name, 'Price:', item.price, 'Photo:', item.photo);
         
-        // Handle photo/image data more robustly
+        // Handle photo/image data more robustly (support photo, image, images)
         let images = [];
-        if (item.photo) {
-          // Check if photo is a string and not empty
-          if (typeof item.photo === 'string' && item.photo.trim() !== '') {
-            images = [item.photo];
-          }
-          // Check if photo is an array
-          else if (Array.isArray(item.photo) && item.photo.length > 0) {
-            images = item.photo.filter(img => img && img.trim() !== '');
-          }
+        const candidateSingleRaw = item.photo || item.image;
+        const candidateSingle = normalizePhotoValue(candidateSingleRaw);
+        const candidateArrayRaw = item.images || (Array.isArray(item.photo) ? item.photo : []) || (Array.isArray(item.image) ? item.image : []);
+        const candidateArray = Array.isArray(candidateArrayRaw) ? candidateArrayRaw.map(normalizePhotoValue) : [];
+        if (candidateSingle && typeof candidateSingle === 'string' && candidateSingle.trim() !== '') {
+          images = [candidateSingle];
+        } else if (Array.isArray(candidateArray) && candidateArray.length > 0) {
+          images = candidateArray.filter(img => typeof img === 'string' && img && img.trim() !== '');
         }
         
         console.log('🖼️ Processed images for item', item.id, ':', images);
@@ -96,6 +123,7 @@ export default function Products() {
           name: item.name,
           description: item.description,
           category: item.category,
+          sub_category: normalizeSubCategory(item),
           price: parseFloat(item.price),
           stock: 0, // Default stock for display
           status: 'In Stock',
@@ -155,23 +183,41 @@ export default function Products() {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    // If user types a URL into photo field, clear any uploaded files (mutually exclusive)
+    if (name === 'photo') {
+      setUploadedFiles([]);
+    }
     setNewProduct(prev => ({
       ...prev,
       [name]: value
     }));
   };
 
-  const handleImageUpload = (e) => {
+  const handleImageUpload = async (e) => {
     const files = Array.from(e.target.files);
-    const newImages = files.map(file => URL.createObjectURL(file));
-    setUploadedImages(prev => [...prev, ...newImages]);
+    const readers = files.map(file => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ name: file.name, dataUrl: reader.result });
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    }));
+    try {
+      const results = await Promise.all(readers);
+      // Clear URL input if we're uploading files (mutually exclusive)
+      if (results.length > 0) {
+        setNewProduct(prev => ({ ...prev, photo: '' }));
+      }
+      // Do NOT overwrite the URL field with base64; keep separate
+      setUploadedFiles(prev => [...prev, ...results]);
+    } catch (err) {
+      toast.error('❌ Failed to read image. Please try a different file.');
+    }
   };
 
   const removeImage = (index) => {
-    const newImages = [...uploadedImages];
-    URL.revokeObjectURL(newImages[index]);
-    newImages.splice(index, 1);
-    setUploadedImages(newImages);
+    const newFiles = [...uploadedFiles];
+    newFiles.splice(index, 1);
+    setUploadedFiles(newFiles);
   };
 
   const handleSubmit = async (e) => {
@@ -215,12 +261,16 @@ export default function Products() {
         throw new Error('No authentication token found. Please log in again.');
       }
 
+      // Prefer locally uploaded file as primary photo; include filename (mutually exclusive with URL)
+      const primaryUpload = uploadedFiles[0];
       const itemData = {
         name: newProduct.name,
         description: newProduct.description,
         price: parseFloat(newProduct.price),
         category: newProduct.category,
-        photo: newProduct.photo || ""
+        sub_category: newProduct.sub_category || '',
+        photo: primaryUpload ? primaryUpload.dataUrl : (newProduct.photo || ""),
+        photo_filename: primaryUpload ? primaryUpload.name : undefined
       };
 
       let response;
@@ -236,9 +286,11 @@ export default function Products() {
         // Update the item in the local state
         // Use the photo from API response, or fallback to the original photo URL from form
         // For now, prioritize the form photo URL to ensure it shows
-        const photoUrl = (newProduct.photo && newProduct.photo !== "") 
+        const photoUrl = primaryUpload ? primaryUpload.dataUrl : (
+          (newProduct.photo && newProduct.photo !== "") 
           ? newProduct.photo 
-          : (response.item.photo && response.item.photo !== "" && response.item.photo !== null ? response.item.photo : null);
+            : (response.item.photo && response.item.photo !== "" && response.item.photo !== null ? response.item.photo : null)
+        );
           
         const updatedItem = {
           id: response.item.id,
@@ -318,9 +370,11 @@ export default function Products() {
         // Add the new item to the local state
         // Use the photo from API response, or fallback to the original photo URL from form
         // For now, prioritize the form photo URL to ensure it shows
-        const photoUrl = (newProduct.photo && newProduct.photo !== "") 
+        const photoUrl = primaryUpload ? primaryUpload.dataUrl : (
+          (newProduct.photo && newProduct.photo !== "") 
           ? newProduct.photo 
-          : (response.item.photo && response.item.photo !== "" && response.item.photo !== null ? response.item.photo : null);
+            : (response.item.photo && response.item.photo !== "" && response.item.photo !== null ? response.item.photo : null)
+        );
           
         const newItem = {
           id: response.item.id,
@@ -365,10 +419,11 @@ export default function Products() {
         name: '',
         description: '',
         category: 'Bedroom',
+        sub_category: '',
         price: '',
         photo: ''
       });
-      setUploadedImages([]);
+      setUploadedFiles([]);
       setIsModalOpen(false);
       setIsEditing(false);
     } catch (error) {
@@ -398,10 +453,11 @@ export default function Products() {
       name: product.name,
       description: product.description || '',
       category: product.category,
+      sub_category: product.sub_category || '',
       price: product.price,
       photo: product.images && product.images.length > 0 ? product.images[0] : ''
     });
-    setUploadedImages([]);
+    setUploadedFiles([]);
     setIsEditing(true);
     setIsModalOpen(true);
   };
@@ -442,17 +498,16 @@ export default function Products() {
       const mappedItems = response.items.map(item => {
         console.log('🔄 Mapping all items - item:', item.id, item.name, 'Photo:', item.photo);
         
-        // Handle photo/image data more robustly
+        // Handle photo/image data more robustly (support photo, image, images)
         let images = [];
-        if (item.photo) {
-          // Check if photo is a string and not empty
-          if (typeof item.photo === 'string' && item.photo.trim() !== '') {
-            images = [item.photo];
-          }
-          // Check if photo is an array
-          else if (Array.isArray(item.photo) && item.photo.length > 0) {
-            images = item.photo.filter(img => img && img.trim() !== '');
-          }
+        const candidateSingleRaw = item.photo || item.image;
+        const candidateSingle = normalizePhotoValue(candidateSingleRaw);
+        const candidateArrayRaw = item.images || (Array.isArray(item.photo) ? item.photo : []) || (Array.isArray(item.image) ? item.image : []);
+        const candidateArray = Array.isArray(candidateArrayRaw) ? candidateArrayRaw.map(normalizePhotoValue) : [];
+        if (candidateSingle && typeof candidateSingle === 'string' && candidateSingle.trim() !== '') {
+          images = [candidateSingle];
+        } else if (Array.isArray(candidateArray) && candidateArray.length > 0) {
+          images = candidateArray.filter(img => typeof img === 'string' && img && img.trim() !== '');
         }
         
         console.log('🖼️ Processed images for all items - item', item.id, ':', images);
@@ -462,6 +517,7 @@ export default function Products() {
           name: item.name,
           description: item.description,
           category: item.category,
+          sub_category: normalizeSubCategory(item),
           price: parseFloat(item.price),
           stock: 0, // Default stock for display
           status: 'In Stock',
@@ -509,37 +565,51 @@ export default function Products() {
         return;
       }
 
-      const doc = new jsPDF();
+      const doc = new jsPDF('p', 'pt', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
       
       // Add title
-      doc.setFontSize(20);
-      doc.text('Brand Decor - All Products', 20, 20);
+      // Logo (if available)
+      try {
+        const logoImg = new Image();
+        logoImg.src = '/logo.png';
+        // Note: In browsers, addImage from URL can be restricted; fallback silently
+        // We'll draw a small placeholder rect if addImage fails
+        doc.addImage(logoImg, 'PNG', 40, 32, 40, 40);
+      } catch (e) {
+        // Draw placeholder box
+        doc.setDrawColor(230);
+        doc.rect(40, 32, 40, 40);
+      }
+      doc.setFontSize(18);
+      doc.text('Brand Decor - All Products', 90, 50);
       
       // Add date
       doc.setFontSize(10);
-      doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 20, 30);
+      doc.text(`Generated on: ${new Date().toLocaleString()}`, 90, 64);
       
       // Prepare table data
       const tableData = itemsToExport.map(item => [
         item.id,
         item.name,
         item.category,
+        (item.sub_category || '—'),
         `KSh ${item.price.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         item.owner ? `${item.owner.first_name} ${item.owner.last_name}` : 'N/A',
-        item.rating.toFixed(1)
+        (item.rating || 0).toFixed(1)
       ]);
       
       // Add table
-      doc.autoTable({
-        head: [['ID', 'Product Name', 'Category', 'Price', 'Owner', 'Rating']],
+      autoTable(doc, {
+        head: [['ID', 'Product Name', 'Category', 'Sub Category', 'Price', 'Owner', 'Rating']],
         body: tableData,
-        startY: 40,
+        startY: 90,
         styles: {
-          fontSize: 8,
-          cellPadding: 3
+          fontSize: 9,
+          cellPadding: 6
         },
         headStyles: {
-          fillColor: [59, 130, 246], // Blue color
+          fillColor: [249, 115, 22], // Orange brand
           textColor: 255,
           fontStyle: 'bold'
         },
@@ -547,6 +617,19 @@ export default function Products() {
           fillColor: [249, 250, 251] // Light gray
         }
       });
+      
+      // Footer
+      const addFooter = () => {
+        const pageCount = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+          doc.setPage(i);
+          doc.setFontSize(9);
+          doc.setTextColor(120);
+          doc.text('Brand Decor Furniture • branddecor.ke', 40, doc.internal.pageSize.getHeight() - 30);
+          doc.text(`Page ${i} of ${pageCount}`, pageWidth - 100, doc.internal.pageSize.getHeight() - 30);
+        }
+      };
+      addFooter();
       
       // Save the PDF
       doc.save('brand-decor-products.pdf');
@@ -675,7 +758,16 @@ export default function Products() {
       const response = await getItemDetails(product.id);
       console.log('📦 Item details response:', response);
       
-      setItemDetails(response.item);
+      // Normalize details photo and fallback to list image if API returns null/invalid
+      const normalizedPhoto = normalizePhotoValue(response.item?.photo);
+      const fallbackListPhoto = Array.isArray(product.images) && product.images.length > 0 ? product.images[0] : '';
+      const mergedDetails = {
+        ...response.item,
+        photo: normalizedPhoto || fallbackListPhoto
+      };
+      // Normalize sub category on details as well
+      mergedDetails.sub_category = normalizeSubCategory(mergedDetails);
+      setItemDetails(mergedDetails);
       setIsItemDetailModalOpen(true);
       
     } catch (error) {
@@ -780,21 +872,7 @@ export default function Products() {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <button 
-            onClick={() => handleViewAllItems()}
-            className="flex items-center space-x-2 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
-          >
-            <FaEye className="h-4 w-4" />
-            <span>View All Items</span>
-          </button>
-          <button 
-            onClick={exportToPDF}
-            disabled={products.length === 0}
-            className="flex items-center space-x-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <FaFilePdf className="h-4 w-4" />
-            <span>Export PDF</span>
-          </button>
+          
           <button 
             onClick={() => loadProducts(false)}
             disabled={isLoadingProducts}
@@ -831,11 +909,12 @@ export default function Products() {
             <span>Test Images</span>
           </button>
           <button 
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center space-x-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            onClick={exportToPDF}
+            disabled={products.length === 0}
+            className="flex items-center space-x-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <FaPlus className="h-4 w-4" />
-            <span>Add Product</span>
+            <FaFilePdf className="h-4 w-4" />
+            <span>Export PDF</span>
           </button>
         </div>
       </div>
@@ -852,6 +931,7 @@ export default function Products() {
                   </div>
                 </th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Category</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Sub Category</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Price</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Stock</th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
@@ -907,12 +987,7 @@ export default function Products() {
                                                  product.images[0] !== "null" &&
                                                  product.images[0] !== "undefined";
                             
-                            console.log('🖼️ Image check for product', product.id, ':', {
-                              hasImages: !!product.images,
-                              imagesLength: product.images?.length || 0,
-                              firstImage: product.images?.[0],
-                              hasValidImage
-                            });
+                            // Removed verbose console logging to prevent flooding
                             
                             if (hasValidImage) {
                               return (
@@ -922,7 +997,8 @@ export default function Products() {
                                   alt={product.name}
                                   onError={(e) => {
                                     console.log('❌ Image failed to load:', product.images[0]);
-                                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(product.name)}&background=random&size=48`;
+                                    e.target.onerror = null;
+                                    e.target.src = FALLBACK_IMG_48;
                                   }}
                                   onLoad={() => {
                                     console.log('✅ Image loaded successfully:', product.images[0]);
@@ -931,11 +1007,11 @@ export default function Products() {
                               );
                             } else {
                               return (
-                                <div className="h-12 w-12 rounded-md bg-gray-100 border border-gray-200 flex items-center justify-center">
-                                  <span className="text-xs font-medium text-gray-500">
-                                    {product.name.split(' ').map(word => word[0]).join('').toUpperCase().slice(0, 2)}
-                                  </span>
-                                </div>
+                                <img 
+                                  className="h-12 w-12 rounded-md object-cover border border-gray-200" 
+                                  src={FALLBACK_IMG_48} 
+                                  alt={product.name}
+                                />
                               );
                             }
                           })()}
@@ -943,12 +1019,18 @@ export default function Products() {
                         <div className="ml-4">
                           <div className="text-sm font-medium text-gray-900">{product.name}</div>
                           <div className="text-xs text-gray-500">ID: #{product.id}</div>
+                          <div className="text-xs text-gray-500 mt-0.5">{product.category}{product.sub_category ? ` • ${product.sub_category}` : ''}</div>
                         </div>
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-6 py-4">
                       <span className="inline-flex rounded-full bg-blue-100 px-2 text-xs font-semibold leading-5 text-blue-800">
                         {product.category}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4">
+                      <span className="inline-flex rounded-full bg-gray-100 px-2 text-xs font-semibold leading-5 text-gray-800">
+                        {product.sub_category || '—'}
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">KSh {product.price.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -1107,14 +1189,62 @@ export default function Products() {
                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                         required
                       >
-                        <option value="Bedroom">Bedroom</option>
+                        <option value="Sofas">Sofas</option>
                         <option value="Living Room">Living Room</option>
-                        <option value="Kitchen">Kitchen</option>
-                        <option value="Bathroom">Bathroom</option>
-                        <option value="Office">Office</option>
-                        <option value="Outdoor">Outdoor</option>
-                        <option value="Decor">Decor</option>
-                        <option value="Lighting">Lighting</option>
+                        <option value="Bedroom">Bedroom</option>
+                        <option value="Interior Decor">Interior Decor</option>
+                        <option value="Dining">Dining</option>
+                      </select>
+                    </div>
+
+                    {/* Sub Category (dynamic based on category) */}
+                    <div>
+                      <label htmlFor="sub_category" className="block text-sm font-medium text-gray-700">
+                        Sub Category
+                      </label>
+                      <select
+                        id="sub_category"
+                        name="sub_category"
+                        value={newProduct.sub_category}
+                        onChange={handleInputChange}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                      >
+                        {newProduct.category === 'Sofas' && (
+                          <>
+                            <option value="General Sofas">General Sofas</option>
+                            <option value="L Shaped Sofas">L Shaped Sofas</option>
+                          </>
+                        )}
+                        {newProduct.category === 'Living Room' && (
+                          <>
+                            <option value="Coffee Tables">Coffee Tables</option>
+                            <option value="Consoles">Consoles</option>
+                            <option value="TV Stands">TV Stands</option>
+                          </>
+                        )}
+                        {newProduct.category === 'Bedroom' && (
+                          <>
+                            <option value="Chest of Drawers">Chest of Drawers</option>
+                            <option value="Chester Beds">Chester Beds</option>
+                            <option value="Dressing Mirror">Dressing Mirror</option>
+                            <option value="Mirror Beds">Mirror Beds</option>
+                            <option value="Night Stand">Night Stand</option>
+                            <option value="Wardrobe">Wardrobe</option>
+                            <option value="Wooden Beds">Wooden Beds</option>
+                          </>
+                        )}
+                        {newProduct.category === 'Dining' && (
+                          <>
+                            <option value="Dining Tables">Dining Tables</option>
+                            <option value="Dining Chairs">Dining Chairs</option>
+                          </>
+                        )}
+                        {newProduct.category === 'Interior Decor' && (
+                          <>
+                            <option value="Wall Art">Wall Art</option>
+                            <option value="Rugs">Rugs</option>
+                          </>
+                        )}
                       </select>
                     </div>
 
@@ -1153,8 +1283,9 @@ export default function Products() {
                         name="photo"
                         value={newProduct.photo}
                         onChange={handleInputChange}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
                         placeholder="Enter image URL (optional)"
+                        disabled={uploadedFiles.length > 0}
                       />
                       
                       {/* Photo Preview */}
@@ -1180,6 +1311,30 @@ export default function Products() {
                               Invalid URL
                             </div>
                           </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Local Image Upload (base64) */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Upload Image</label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        className="mt-1 block w-full text-sm text-gray-900 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-60"
+                        disabled={!!newProduct.photo}
+                      />
+                      {uploadedFiles.length > 0 && (
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          {uploadedFiles.map((file, idx) => (
+                            <div key={idx} className="relative">
+                              <img src={file.dataUrl} alt={file.name || `Upload ${idx+1}`} className="h-24 w-24 object-cover rounded-md border" />
+                              <button type="button" onClick={() => removeImage(idx)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full h-6 w-6 flex items-center justify-center">
+                                <FaTimes size={12} />
+                              </button>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -1283,6 +1438,7 @@ export default function Products() {
                         <tr>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sub Category</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Owner</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rating</th>
@@ -1311,7 +1467,8 @@ export default function Products() {
                                           alt={item.name}
                                           onError={(e) => {
                                             console.log('❌ Image failed to load in all items:', item.images[0]);
-                                            e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name)}&background=random&size=40`;
+                                            e.target.onerror = null;
+                                            e.target.src = FALLBACK_IMG_40;
                                           }}
                                           onLoad={() => {
                                             console.log('✅ Image loaded successfully in all items:', item.images[0]);
@@ -1320,11 +1477,11 @@ export default function Products() {
                                       );
                                     } else {
                                       return (
-                                        <div className="h-10 w-10 rounded-md bg-gray-100 border border-gray-200 flex items-center justify-center">
-                                          <span className="text-xs font-medium text-gray-500">
-                                            {item.name.split(' ').map(word => word[0]).join('').toUpperCase().slice(0, 2)}
-                                          </span>
-                                        </div>
+                                        <img 
+                                          className="h-10 w-10 rounded-md object-cover border border-gray-200" 
+                                          src={FALLBACK_IMG_40} 
+                                          alt={item.name}
+                                        />
                                       );
                                     }
                                   })()}
@@ -1338,6 +1495,11 @@ export default function Products() {
                             <td className="px-6 py-4 whitespace-nowrap">
                               <span className="inline-flex rounded-full bg-blue-100 px-2 text-xs font-semibold leading-5 text-blue-800">
                                 {item.category}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="inline-flex rounded-full bg-gray-100 px-2 text-xs font-semibold leading-5 text-gray-800">
+                                {item.sub_category || '—'}
                               </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -1446,7 +1608,8 @@ export default function Products() {
                               className="h-48 w-48 object-cover rounded-lg border border-gray-200"
                               onError={(e) => {
                                 console.log('❌ Item details image failed to load:', itemDetails.photo);
-                                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(itemDetails.name)}&background=random&size=192`;
+                                e.target.onerror = null;
+                                e.target.src = FALLBACK_IMG_192;
                               }}
                               onLoad={() => {
                                 console.log('✅ Item details image loaded successfully:', itemDetails.photo);
@@ -1455,11 +1618,11 @@ export default function Products() {
                           );
                         } else {
                           return (
-                            <div className="h-48 w-48 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center">
-                              <span className="text-4xl font-medium text-gray-500">
-                                {itemDetails.name.split(' ').map(word => word[0]).join('').toUpperCase().slice(0, 2)}
-                              </span>
-                            </div>
+                            <img
+                              src={FALLBACK_IMG_192}
+                              alt={itemDetails.name}
+                              className="h-48 w-48 object-cover rounded-lg border border-gray-200"
+                            />
                           );
                         }
                       })()}
@@ -1474,10 +1637,15 @@ export default function Products() {
                       
                       <div>
                         <h4 className="text-sm font-medium text-gray-500 uppercase tracking-wider">Category</h4>
-                        <p className="mt-1">
+                        <p className="mt-1 space-x-1">
                           <span className="inline-flex rounded-full bg-blue-100 px-2 text-xs font-semibold leading-5 text-blue-800">
                             {itemDetails.category}
                           </span>
+                          {itemDetails.sub_category && (
+                            <span className="inline-flex rounded-full bg-gray-100 px-2 text-xs font-semibold leading-5 text-gray-800">
+                              {itemDetails.sub_category}
+                            </span>
+                          )}
                         </p>
                       </div>
                       

@@ -91,10 +91,11 @@ export const AuthProvider = ({ children }) => {
   };
 
   const isAuthenticated = () => {
+    // Treat presence of any token as authenticated to avoid flicker/loops while user loads
     const hasToken = !!localStorage.getItem('token') || 
                      !!localStorage.getItem('adminToken') || 
                      !!localStorage.getItem('userToken');
-    return !!user && hasToken;
+    return hasToken;
   };
 
   // Determine if the current user has admin role

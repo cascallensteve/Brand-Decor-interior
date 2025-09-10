@@ -1,12 +1,44 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { FaBox, FaUsers, FaShoppingCart, FaDollarSign } from 'react-icons/fa';
+import { getAllItems, getAllUsers } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 const Dashboard = () => {
+  const { getToken, isAdmin } = useAuth();
+  const [productCount, setProductCount] = useState(null);
+  const [userCount, setUserCount] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const itemsPromise = getAllItems();
+        const token = getToken && getToken();
+        const usersPromise = isAdmin && isAdmin() && token ? getAllUsers(token) : Promise.resolve({ users: [] });
+        const [itemsRes, usersRes] = await Promise.all([itemsPromise, usersPromise]);
+        if (!isMounted) return;
+        setProductCount(itemsRes?.items?.length ?? 0);
+        setUserCount(Array.isArray(usersRes?.users) ? usersRes.users.length : (Array.isArray(usersRes?.data) ? usersRes.data.length : 0));
+      } catch (e) {
+        if (!isMounted) return;
+        setError(e.message || 'Failed to load dashboard data');
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+    load();
+    return () => { isMounted = false; };
+  }, []);
+
   const stats = [
-    { title: 'Total Products', value: '1,234', icon: <FaBox className="text-2xl text-blue-500" />, change: '+12% from last month' },
-    { title: 'Total Users', value: '5,678', icon: <FaUsers className="text-2xl text-green-500" />, change: '+8% from last month' },
-    { title: 'Total Orders', value: '2,345', icon: <FaShoppingCart className="text-2xl text-yellow-500" />, change: '+15% from last month' },
-    { title: 'Total Revenue', value: '$45,678', icon: <FaDollarSign className="text-2xl text-purple-500" />, change: '+20% from last month' },
+    { title: 'Total Products', value: productCount ?? '—', icon: <FaBox className="text-2xl text-blue-500" />, change: '' },
+    { title: 'Total Users', value: userCount ?? '—', icon: <FaUsers className="text-2xl text-green-500" />, change: '' },
+    { title: 'Total Orders', value: '—', icon: <FaShoppingCart className="text-2xl text-yellow-500" />, change: 'Coming soon' },
+    { title: 'Total Revenue', value: '—', icon: <FaDollarSign className="text-2xl text-purple-500" />, change: 'Coming soon' },
   ];
 
   return (
@@ -20,8 +52,8 @@ const Dashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-500">{stat.title}</p>
-                <p className="mt-1 text-2xl font-semibold text-gray-900">{stat.value}</p>
-                <p className="mt-1 text-xs text-green-600">{stat.change}</p>
+                <p className="mt-1 text-2xl font-semibold text-gray-900">{loading ? 'Loading…' : stat.value}</p>
+                {stat.change && <p className="mt-1 text-xs text-gray-500">{stat.change}</p>}
               </div>
               <div className="rounded-full bg-blue-50 p-3">
                 {stat.icon}

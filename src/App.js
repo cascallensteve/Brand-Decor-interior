@@ -42,6 +42,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import ProtectedRoute from './components/ProtectedRoute';
 import PublicRoute from './components/PublicRoute';
+import AdminProfile from './admin/pages/AdminProfile';
 
 function App() {
   return (
@@ -127,6 +128,7 @@ function App() {
               <Route path="orders" element={<Orders />} />
               <Route path="settings" element={<Settings />} />
               <Route path="settings/:tab" element={<Settings />} />
+              <Route path="profile" element={<AdminProfile />} />
             </Route>
           </Routes>
         </div>

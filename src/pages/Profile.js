@@ -157,6 +157,12 @@ const Profile = () => {
     return user?.email?.charAt(0).toUpperCase() || 'U';
   };
 
+  // If admin tries to access client profile, send to admin dashboard
+  if (user && (user.userType === 'admin' || user.role === 'admin')) {
+    navigate('/admin');
+    return null;
+  }
+
   return (
     <div className="App">
       <TopNavbar />

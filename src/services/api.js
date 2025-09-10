@@ -515,6 +515,7 @@ export const addItem = async (itemData, token) => {
         description: itemData.description,
         price: parseFloat(itemData.price),
         category: itemData.category,
+        sub_category: itemData.sub_category || "",
         photo: itemData.photo || ""
       }),
     });
