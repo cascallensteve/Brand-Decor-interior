@@ -123,6 +123,74 @@ export const getAuthHeader = (token, userType = 'user') => {
   }
 };
 
+// Rate an item (user-authenticated)
+export const rateItem = async (itemId, rating, token) => {
+  if (!itemId) throw new Error('Missing itemId');
+  if (!token) throw new Error('Authentication required');
+  if (typeof rating !== 'number' || rating <= 0) throw new Error('Invalid rating');
+
+  const url = `${API_BASE_URL}/store/rate-item/${itemId}/`;
+  const authHeaders = [`Bearer ${token}`, `Token ${token}`];
+  let lastRes = null;
+  let lastData = null;
+
+  for (const auth of authHeaders) {
+    try {
+      const res = await fetchWithTimeout(
+        url,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': auth,
+          },
+          body: JSON.stringify({ rating }),
+        },
+        15000
+      );
+
+      lastRes = res;
+      const contentType = res.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+      lastData = null;
+      try {
+        lastData = isJson ? await res.json() : null;
+      } catch (_) {}
+
+      if (res.ok) {
+        return lastData || { message: 'Rating submitted successfully.' };
+      }
+
+      // If auth failed with this scheme, try the next
+      if (res.status === 401 || res.status === 403) {
+        // But if message indicates already-rated, surface that immediately
+        const msg = (lastData?.message || lastData?.detail || '').toLowerCase();
+        if (msg.includes('already')) {
+          throw new Error('ALREADY_RATED');
+        }
+        continue;
+      }
+
+      // Non-auth errors: stop retrying and handle below
+      break;
+    } catch (e) {
+      // Network-level error, proceed to next scheme
+      continue;
+    }
+  }
+
+  // Map error from lastRes/lastData
+  const serverMsg = lastData?.message || lastData?.detail || lastRes?.statusText || 'Failed to submit rating';
+  const msgLower = String(serverMsg).toLowerCase();
+  if ((lastRes?.status === 409) || msgLower.includes('already rated') || msgLower.includes('already')) {
+    throw new Error('ALREADY_RATED');
+  }
+  if (lastRes?.status === 401 || lastRes?.status === 403) {
+    throw new Error('Authentication required');
+  }
+  throw new Error(serverMsg);
+};
+
 // Sign Up API
 export const signUp = async (userData) => {
   try {
@@ -796,136 +864,6 @@ export const getItemDetails = async (itemId) => {
   }
 };
 
-// Rate Item API
-export const rateItem = async (itemId, rating, token) => {
-  try {
-    if (!token) {
-      throw new Error("No authentication token provided");
-    }
-
-    if (!itemId) {
-      throw new Error("Item ID is required");
-    }
-
-    if (rating === undefined || rating === null || rating < 0 || rating > 5) {
-      throw new Error("Rating must be between 0 and 5");
-    }
-
-    // Validate token before making the request
-    if (!isTokenValid(token)) {
-      throw new Error("Authentication token has expired. Please log in again.");
-    }
-
-    // Try different authentication methods
-    const authMethods = [
-      `Token ${token}`,
-      `Bearer ${token}`,
-      token
-    ];
-
-    let response;
-    let lastError;
-
-    for (const authHeader of authMethods) {
-      try {
-        console.log("🔐 Trying auth method:", authHeader.substring(0, 20) + "...");
-        
-        response = await fetch(`${API_BASE_URL}/store/rate-item/${itemId}/`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": authHeader,
-          },
-          body: JSON.stringify({
-            rating: parseFloat(rating)
-          }),
-        });
-
-        console.log("📡 API Response Status:", response.status, response.statusText);
-
-        if (response.ok) {
-          console.log("✅ Authentication successful with method:", authHeader.substring(0, 20) + "...");
-          break;
-        } else if (response.status === 401 || response.status === 403) {
-          console.log("❌ Auth failed with method:", authHeader.substring(0, 20) + "...");
-          const errorData = await response.json().catch(() => ({}));
-          lastError = errorData.detail || errorData.message || `HTTP ${response.status}`;
-          continue;
-        } else {
-          // Other error, don't retry
-          break;
-        }
-      } catch (error) {
-        console.log("❌ Network error with method:", authHeader.substring(0, 20) + "...");
-        lastError = error.message;
-        continue;
-      }
-    }
-
-    console.log("📡 API Response Status:", response.status, response.statusText);
-
-    if (!response || !response.ok) {
-      let errorMessage = lastError || "Failed to submit rating";
-      
-      if (response) {
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.message || errorData.detail || errorData.error || errorMessage;
-          console.log("📄 Error response data:", errorData);
-        } catch (parseError) {
-          errorMessage = `Server returned ${response.status}: ${response.statusText}`;
-          console.log("❌ Failed to parse error response:", parseError);
-        }
-        
-        // Handle specific status codes
-        if (response.status === 401) {
-          errorMessage = "Authentication failed. Please log in again.";
-        } else if (response.status === 403) {
-          errorMessage = "Access denied. Please log in to rate items.";
-        } else if (response.status === 404) {
-          errorMessage = "Item not found.";
-        } else if (response.status === 400) {
-          // Check if it's an "already rated" error - check both errorMessage and lastError
-          const fullErrorMessage = errorMessage + " " + (lastError || "");
-          console.log("🔍 Debug - Full error message:", fullErrorMessage);
-          console.log("🔍 Debug - Error message:", errorMessage);
-          console.log("🔍 Debug - Last error:", lastError);
-          
-          // Check for various forms of "already rated" message
-          const alreadyRatedPatterns = [
-            'already rated',
-            'already rated this item',
-            'You have already rated this item',
-            'You have already rated this item.'
-          ];
-          
-          const isAlreadyRated = alreadyRatedPatterns.some(pattern => 
-            fullErrorMessage.toLowerCase().includes(pattern.toLowerCase())
-          );
-          
-          if (isAlreadyRated) {
-            console.log("✅ Detected already rated error");
-            errorMessage = "ALREADY_RATED"; // Special flag for already rated
-          } else {
-            console.log("❌ Not an already rated error");
-            errorMessage = "Invalid rating value. Please provide a rating between 0 and 5.";
-          }
-        } else if (response.status === 500) {
-          errorMessage = "Server error. Please try again later.";
-        }
-      }
-
-      throw new Error(errorMessage);
-    }
-
-    const data = await response.json();
-    console.log("✅ Successfully submitted rating:", data);
-    return data;
-  } catch (error) {
-    console.error("❌ Error in rateItem:", error);
-    throw error;
-  }
-};
 
 // Create Order API
 export const createOrder = async (orderData, token) => {

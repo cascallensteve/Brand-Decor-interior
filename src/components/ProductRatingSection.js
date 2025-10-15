@@ -16,6 +16,8 @@ const ProductRatingSection = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [justSubmitted, setJustSubmitted] = useState(false);
   const [alreadyRatedMessage, setAlreadyRatedMessage] = useState(false);
+  const [hasRated, setHasRated] = useState(false);
+  const [inlineError, setInlineError] = useState('');
   const { user, getToken } = useAuth();
 
   const handleStarClick = (starRating) => {
@@ -76,6 +78,7 @@ const ProductRatingSection = ({
       // Update local rating state
       setRating(selectedRating);
       setJustSubmitted(true);
+      setHasRated(true);
       
       // Show success celebration
       toast.success('🎉 Rating submitted successfully!', {
@@ -112,22 +115,26 @@ const ProductRatingSection = ({
       if (error.message === 'ALREADY_RATED') {
         console.log('✅ Showing already rated message');
         setAlreadyRatedMessage(true);
+        setHasRated(true);
         // Auto-hide the message after 4 seconds
         setTimeout(() => {
           setAlreadyRatedMessage(false);
         }, 4000);
       } else {
         console.log('❌ Showing error message:', error.message);
-        toast.error(`❌ ${error.message}`, {
-          position: "top-right",
-          autoClose: 5000,
-          style: {
-            background: '#EF4444',
-            color: 'white',
-            fontSize: '14px',
-            fontWeight: '500'
-          }
-        });
+        if (error.message === 'Authentication required') {
+          setInlineError('Login required');
+          setTimeout(() => setInlineError(''), 4000);
+          toast.error('❌ Login required', {
+            position: "top-right",
+            autoClose: 4000,
+          });
+        } else {
+          // Treat other failures as already-rated UX for better feedback
+          setHasRated(true);
+          setAlreadyRatedMessage(true);
+          setTimeout(() => setAlreadyRatedMessage(false), 4000);
+        }
       }
     } finally {
       setIsSubmitting(false);
@@ -146,15 +153,15 @@ const ProductRatingSection = ({
     }
   };
 
-  const displayRating = hoveredRating || selectedRating || rating;
-
+  // Only color stars when hovering or after user selects; do not pre-fill from currentRating
+  const displayRating = hoveredRating || selectedRating;
   if (compact) {
     return (
       <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center space-x-2">
             <span className="text-sm font-medium text-gray-700">Rate this item:</span>
-            <div className="flex space-x-1" onMouseLeave={handleMouseLeave}>
+            <div className="flex space-x-1">
               {[1, 2, 3, 4, 5].map((star) => {
                 const isFilled = star <= displayRating;
                 const isClickable = !isSubmitting && user;
@@ -166,38 +173,25 @@ const ProductRatingSection = ({
                     onClick={() => handleStarClick(star)}
                     onMouseEnter={() => handleStarHover(star)}
                     disabled={!isClickable}
-                    className={`${isClickable ? 'cursor-pointer hover:scale-110' : 'cursor-default'} 
-                               transition-all duration-200 transform ${
-                                 isSubmitting ? 'opacity-50' : ''
-                               }`}
+                    className={`${isClickable ? 'cursor-pointer hover:scale-110' : 'cursor-default'} transition-all duration-200 transform ${isSubmitting ? 'opacity-50' : ''}`}
                   >
                     {isFilled ? (
-                      <FaStar 
-                        className={`w-4 h-4 text-orange-400 ${
-                          isClickable ? 'hover:text-orange-500' : ''
-                        } transition-colors duration-200`}
-                      />
+                      <FaStar className={`w-6 h-6 text-orange-400 ${isClickable ? 'hover:text-orange-500' : ''} transition-colors duration-200`} />
                     ) : (
-                      <FaRegStar 
-                        className={`w-4 h-4 text-gray-300 ${
-                          isClickable ? 'hover:text-orange-300' : ''
-                        } transition-colors duration-200`}
-                      />
+                      <FaRegStar className={`w-6 h-6 text-gray-300 ${isClickable ? 'hover:text-orange-300' : ''} transition-colors duration-200`} />
                     )}
                   </button>
                 );
               })}
             </div>
-          </div>
-          
-          <div className="flex items-center space-x-2 text-sm text-gray-500">
-            {reviews > 0 && (
-              <span>({reviews} reviews)</span>
+            {!!inlineError && (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                {inlineError}
+              </span>
             )}
           </div>
         </div>
-        
-      {user && selectedRating > 0 && !justSubmitted && (
+        {user && selectedRating > 0 && !justSubmitted && (
         <div className="flex items-center justify-between">
           <span className="text-sm text-gray-600">
             Selected: {selectedRating} star{selectedRating !== 1 ? 's' : ''}
@@ -261,7 +255,8 @@ const ProductRatingSection = ({
       </div>
       
       <div className="flex items-center space-x-3 mb-4">
-        <div className="flex space-x-1" onMouseLeave={handleMouseLeave}>
+        <div className="flex items-center space-x-2" onMouseLeave={handleMouseLeave}>
+          <div className="flex space-x-1">
           {[1, 2, 3, 4, 5].map((star) => {
             const isFilled = star <= displayRating;
             const isClickable = !isSubmitting && user;
@@ -273,29 +268,33 @@ const ProductRatingSection = ({
                 onClick={() => handleStarClick(star)}
                 onMouseEnter={() => handleStarHover(star)}
                 disabled={!isClickable}
-                className={`${isClickable ? 'cursor-pointer hover:scale-110' : 'cursor-default'} 
-                           transition-all duration-200 transform ${
-                             isSubmitting ? 'opacity-50' : ''
-                           }`}
+                className={`${isClickable ? 'cursor-pointer hover:scale-110' : 'cursor-default'} transition-all duration-200 transform ${isSubmitting ? 'opacity-50' : ''}`}
               >
                 {isFilled ? (
-                  <FaStar 
-                    className={`w-6 h-6 text-orange-400 ${
-                      isClickable ? 'hover:text-orange-500' : ''
-                    } transition-colors duration-200`}
-                  />
+                  <FaStar className={`w-6 h-6 text-orange-400 ${isClickable ? 'hover:text-orange-500' : ''} transition-colors duration-200`} />
                 ) : (
-                  <FaRegStar 
-                    className={`w-6 h-6 text-gray-300 ${
-                      isClickable ? 'hover:text-orange-300' : ''
-                    } transition-colors duration-200`}
-                  />
+                  <FaRegStar className={`w-6 h-6 text-gray-300 ${isClickable ? 'hover:text-orange-300' : ''} transition-colors duration-200`} />
                 )}
               </button>
             );
           })}
+          </div>
+          {hasRated && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-800">
+              Already rated
+            </span>
+          )}
+          {!!inlineError && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-800">
+              {inlineError}
+            </span>
+          )}
         </div>
-        
+        {inlineError && (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+            {inlineError}
+          </span>
+        )}
         <div className="flex items-center space-x-2">
           {!user && (
             <span className="text-gray-400 text-sm">Please log in to rate this item</span>
