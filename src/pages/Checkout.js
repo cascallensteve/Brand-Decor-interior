@@ -57,17 +57,37 @@ const MpesaPayment = ({ totalAmount, onPaymentSuccess, onPaymentError, onPayment
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState('');
 
+  // Normalize phone numbers: allow inputs starting with 01, 07, or 254
+  const normalizePhone = (input) => {
+    if (!input) return '';
+    const digits = String(input).replace(/\D+/g, '');
+    if (digits.startsWith('254')) {
+      return digits; // already international format
+    }
+    if (digits.startsWith('0')) {
+      return '254' + digits.slice(1);
+    }
+    // If user types 7XXXXXXXX or 1XXXXXXXX (without leading 0), assume Kenya and prepend 254
+    if (digits.length === 9 && (digits.startsWith('7') || digits.startsWith('1'))) {
+      return '254' + digits;
+    }
+    return digits;
+  };
+
+  const isValidKenyaMobile = (normalized) => {
+    // Valid when 254 followed by 9 digits and next digit set starts with 7 or 1
+    return /^254(7|1)\d{8}$/.test(normalized);
+  };
+
   const handleMpesaPayment = async () => {
-    if (!phoneNumber || phoneNumber.length < 10) {
-      onPaymentError('Please enter a valid phone number');
+    const normalized = normalizePhone(phoneNumber);
+    if (!isValidKenyaMobile(normalized)) {
+      onPaymentError('Please enter a valid Kenyan mobile (starts with 07, 01 or 2547/2541)');
       return;
     }
 
-    // Format phone number to ensure it starts with 254
-    let formattedPhone = phoneNumber.replace(/\s+/g, '').replace(/^0/, '254');
-    if (!formattedPhone.startsWith('254')) {
-      formattedPhone = '254' + formattedPhone;
-    }
+    // Use normalized 254 format
+    const formattedPhone = normalized;
 
     console.log('Original phone:', phoneNumber);
     console.log('Formatted phone:', formattedPhone);
@@ -148,7 +168,7 @@ const MpesaPayment = ({ totalAmount, onPaymentSuccess, onPaymentError, onPayment
   };
 
   return (
-    <div className="bg-white rounded-lg p-6 shadow-sm border">
+    <div className="bg-white rounded-lg p-6 shadow-sm border relative">
       <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
         <span className="mr-3">💳</span>
         M-Pesa Payment
@@ -162,11 +182,12 @@ const MpesaPayment = ({ totalAmount, onPaymentSuccess, onPaymentError, onPayment
           type="tel"
           value={phoneNumber}
           onChange={(e) => setPhoneNumber(e.target.value)}
-          placeholder="0700000000 or 254700000000"
+          onBlur={() => setPhoneNumber(normalizePhone(phoneNumber))}
+          placeholder="07XXXXXXXX, 01XXXXXXXX or 2547/2541XXXXXXXX"
           className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
           disabled={isProcessing}
         />
-        <p className="text-xs text-gray-500 mt-1">Enter your M-Pesa registered phone number (e.g., 0700000000 or 254700000000)</p>
+        <p className="text-xs text-gray-500 mt-1">Enter your M-Pesa number. Allowed: 07XXXXXXXX, 01XXXXXXXX, 2547XXXXXXXXX, 2541XXXXXXXXX</p>
       </div>
 
       <div className="mb-6 p-4 bg-gray-50 rounded-lg">
@@ -179,21 +200,6 @@ const MpesaPayment = ({ totalAmount, onPaymentSuccess, onPaymentError, onPayment
       {paymentStatus && (
         <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
           <p className="text-blue-800 text-sm">{paymentStatus}</p>
-          {paymentStatus.includes('Payment request sent') && !paymentStatus.includes('completed') && (
-            <div className="mt-3">
-              <button
-                onClick={() => {
-                  setPaymentStatus('Payment completed. Order confirmed.');
-                  toast.success('Payment completed! Your order has been confirmed.');
-                  onPaymentComplete();
-                  setIsProcessing(false);
-                }}
-                className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
-              >
-                I've Completed Payment
-              </button>
-            </div>
-          )}
         </div>
       )}
 
@@ -226,14 +232,13 @@ const Checkout = () => {
   const { items, getTotalPrice, clearCart } = useCart();
   const { getToken } = useAuth();
   const [customerInfo, setCustomerInfo] = useState({
-    fullName: '',
+    firstName: '',
+    lastName: '',
     email: '',
     phone: '',
-    address: '',
     city: '',
     county: '',
-    postalCode: '',
-    notes: ''
+    postalCode: ''
   });
   const [notification, setNotification] = useState({ message: '', type: '' });
 
@@ -259,15 +264,16 @@ const Checkout = () => {
           quantity: item.quantity
         })),
         shipping_info: {
-          first_name: customerInfo.fullName.split(' ')[0] || customerInfo.fullName,
-          last_name: customerInfo.fullName.split(' ').slice(1).join(' ') || '',
+          first_name: customerInfo.firstName,
+          last_name: customerInfo.lastName,
           email: customerInfo.email,
           phone: customerInfo.phone,
-          address: customerInfo.address,
+          address: `${customerInfo.city}${customerInfo.county ? ', ' + customerInfo.county : ''}`,
           city: customerInfo.city,
           county: customerInfo.county || customerInfo.city,
           postal_code: customerInfo.postalCode || '00000'
-        }
+        },
+        total_price: Number(finalTotal.toFixed(2))
       };
 
       // Create order
@@ -352,12 +358,25 @@ const Checkout = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Full Name *
+                    First Name *
                   </label>
                   <input
                     type="text"
-                    name="fullName"
-                    value={customerInfo.fullName}
+                    name="firstName"
+                    value={customerInfo.firstName}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Last Name *
+                  </label>
+                  <input
+                    type="text"
+                    name="lastName"
+                    value={customerInfo.lastName}
                     onChange={handleInputChange}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                     required
@@ -434,33 +453,8 @@ const Checkout = () => {
                   />
                 </div>
                 
-                <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Delivery Address *
-                  </label>
-                  <textarea
-                    name="address"
-                    value={customerInfo.address}
-                    onChange={handleInputChange}
-                    rows="3"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                    required
-                  />
-                </div>
-                
-                <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Order Notes (Optional)
-                  </label>
-                  <textarea
-                    name="notes"
-                    value={customerInfo.notes}
-                    onChange={handleInputChange}
-                    rows="2"
-                    placeholder="Any special instructions for delivery..."
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                  />
-                </div>
+                {/* Delivery Address removed as per requirements */}
+                {/* Order Notes removed as per requirements */}
               </div>
             </div>
 

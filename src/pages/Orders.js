@@ -3,6 +3,9 @@ import { useTheme } from '../context/ThemeContext';
 import { getOrderDetails, getMyOrders, payForOrder, checkTransactionStatus, getItemDetails, getAuthHeader } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
+import TopNavbar from '../components/TopNavbar';
+import MainHeader from '../components/MainHeader';
+import Footer from '../components/Footer';
 import { 
   FaShoppingBag, 
   FaClock, 
@@ -19,6 +22,48 @@ import {
   FaSpinner
 } from 'react-icons/fa';
 
+// Lightweight image component with fallback and fade-in to stop flickering
+const ImageWithFallback = ({ src, alt, className }) => {
+  const [imgSrc, setImgSrc] = useState(src);
+  const [loaded, setLoaded] = useState(false);
+  const placeholder = '/placeholder-image.jpg';
+
+  useEffect(() => {
+    setImgSrc(src);
+    setLoaded(false);
+  }, [src]);
+
+  return (
+    <div className={className} style={{ position: 'relative', overflow: 'hidden' }}>
+      {!loaded && (
+        <div className="absolute inset-0 bg-gray-200 animate-pulse" />
+      )}
+      <img
+        src={imgSrc}
+        alt={alt}
+        loading="lazy"
+        onLoad={() => setLoaded(true)}
+        onError={(e) => {
+          if (imgSrc !== placeholder) {
+            // prevent infinite loop by setting once
+            setImgSrc(placeholder);
+          }
+        }}
+        className={`w-full h-full object-cover ${loaded ? 'opacity-100' : 'opacity-0'} transition-opacity duration-300`}
+      />
+    </div>
+  );
+};
+
+// Resolve relative image URLs from API to absolute
+const API_BASE = 'https://brand-decor-ecom-api.vercel.app';
+const resolveImageUrl = (url) => {
+  if (!url || typeof url !== 'string') return '/placeholder-image.jpg';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('/')) return `${API_BASE}${url}`;
+  return url;
+};
+
 const Orders = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -26,7 +71,8 @@ const Orders = () => {
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState({});
   const [enrichingProducts, setEnrichingProducts] = useState(false);
-  const { user } = useAuth();
+  const [payDialog, setPayDialog] = useState({ open: false, orderId: null, amount: 0, phone: '', error: '' });
+  const { user, getToken } = useAuth();
   // const { darkMode } = useTheme(); // Available for future use
 
   // order issue and image issues 
@@ -39,8 +85,8 @@ const Orders = () => {
           order.items.map(async (item) => {
             if (item.item && typeof item.item === "number") {
               try {
-                const authHeader = getAuthHeader(user.token);
-                const productDetails = await getItemDetails(item.item, authHeader);
+                const token = getToken();
+                const productDetails = await getItemDetails(item.item, token);
 
                 // Normalize for multiple API response formats
                 const normalizedProduct = {
@@ -54,7 +100,7 @@ const Orders = () => {
                     productDetails.unit_price ||
                     0
                   ),
-                  image:
+                  image: resolveImageUrl(
                     productDetails.photo ||
                     productDetails.image ||
                     productDetails.image_url ||
@@ -62,7 +108,8 @@ const Orders = () => {
                     (productDetails.images && productDetails.images[0]?.src) ||
                     (productDetails.images && productDetails.images[0]?.url) ||
                     (productDetails.images && productDetails.images[0]) ||
-                    "/placeholder-image.jpg",
+                    "/placeholder-image.jpg"
+                  ),
                 };
 
                 console.log(' Product details for item', item.item, ':', productDetails);
@@ -86,9 +133,9 @@ const Orders = () => {
                   ...item,
                   item: {
                     id: item.item,
-                    name: item.name || "Unknown Product",
+                    name: item.name || `Item ${item.item}`,
                     price: fallbackPrice,
-                    image: item.image || item.photo || "/placeholder-image.jpg",
+                    image: resolveImageUrl(item.image || item.photo || "/placeholder-image.jpg"),
                   },
                 };
               }
@@ -116,8 +163,8 @@ const Orders = () => {
   const fetchOrders = useCallback(async () => {
     try {
       setLoading(true);
-      const authHeader = getAuthHeader(user.token);
-      const ordersData = await getMyOrders(authHeader);
+      const token = getToken();
+      const ordersData = await getMyOrders(token);
       const enrichedOrders = await enrichOrderWithProductDetails(ordersData);
       setOrders(enrichedOrders);
     } catch (error) {
@@ -200,11 +247,22 @@ const Orders = () => {
     });
   };
 
+  // Phone helpers (Kenya): accept 07/01/254 and normalize to 254XXXXXXXXX
+  const normalizePhone = (input) => {
+    if (!input) return '';
+    const digits = String(input).replace(/\D+/g, '');
+    if (digits.startsWith('254')) return digits;
+    if (digits.startsWith('0')) return '254' + digits.slice(1);
+    if (digits.length === 9 && (digits.startsWith('7') || digits.startsWith('1'))) return '254' + digits;
+    return digits;
+  };
+  const isValidKenyaMobile = (normalized) => /^254(7|1)\d{8}$/.test(normalized);
+
   const handleViewOrder = async (orderId) => {
     try {
       setLoading(true);
-      const authHeader = getAuthHeader(user.token);
-      const orderDetails = await getOrderDetails(orderId, authHeader);
+      const token = getToken();
+      const orderDetails = await getOrderDetails(orderId, token);
       setSelectedOrder(orderDetails);
       setShowOrderModal(true);
     } catch (error) {
@@ -215,15 +273,21 @@ const Orders = () => {
     }
   };
 
-  const handlePayment = async (orderId, amount) => {
+  const handlePayment = async (orderId, amount, overridePhone) => {
     try {
       setPaymentLoading(prev => ({ ...prev, [orderId]: true }));
-      const authHeader = getAuthHeader(user.token);
+      const token = getToken();
       
       // Get user's phone number from the order or user profile
-      const phoneNumber = user?.phone_no || 'Enter your phone number';
+      const phoneNumber = overridePhone || user?.phone_no || '';
+      const normalizedPhone = normalizePhone(phoneNumber);
+      if (!isValidKenyaMobile(normalizedPhone)) {
+        toast.error('Please enter a valid Kenyan mobile (07/01/254).');
+        setPaymentLoading(prev => ({ ...prev, [orderId]: false }));
+        return;
+      }
       
-      const paymentResult = await payForOrder(orderId, phoneNumber, amount, authHeader);
+      const paymentResult = await payForOrder(orderId, normalizedPhone, amount, token);
       
       toast.success('Payment request sent to your phone. Please check your M-Pesa and enter your PIN.');
       
@@ -316,20 +380,28 @@ const Orders = () => {
 
   if (loading || enrichingProducts) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center transition-colors">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-300">
-            {loading ? 'Loading your orders...' : 'Loading product details...'}
-          </p>
+      <div className="App">
+        <TopNavbar />
+        <MainHeader />
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center transition-colors">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+            <p className="mt-4 text-gray-600 dark:text-gray-300">
+              {loading ? 'Loading your orders...' : 'Loading product details...'}
+            </p>
+          </div>
         </div>
+        <Footer />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="App">
+      <TopNavbar />
+      <MainHeader />
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center space-x-3 mb-4">
@@ -398,8 +470,8 @@ const Orders = () => {
                       <div className="space-y-2">
                         {order.items.slice(0, 2).map((item, index) => (
                           <div key={index} className="flex items-center space-x-3 text-sm">
-                            <img
-                              src={
+                            <ImageWithFallback
+                              src={resolveImageUrl(
                                 item.item?.photo ||
                                 item.item?.image ||
                                 item.item?.image_url ||
@@ -410,12 +482,9 @@ const Orders = () => {
                                 item.photo ||
                                 item.image ||
                                 '/placeholder-image.jpg'
-                              }
+                              )}
                               alt={item.item?.name || item.name || 'Product'}
-                              className="w-12 h-12 object-cover rounded-lg"
-                              onError={(e) => {
-                                e.target.src = '/placeholder-image.jpg';
-                              }}
+                              className="w-12 h-12 rounded-lg"
                             />
                             <div className="flex-1">
                               <span className="text-gray-900 font-medium">
@@ -448,7 +517,7 @@ const Orders = () => {
                         
                         {(order.status === 'pending' || order.status === 'failed') && (
                           <button
-                            onClick={() => handlePayment(order.id, total)}
+                            onClick={() => setPayDialog({ open: true, orderId: order.id, amount: total, phone: user?.phone_no || '', error: '' })}
                             disabled={isPaymentLoading}
                             className="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:bg-gray-300 transition-colors"
                           >
@@ -504,8 +573,8 @@ const Orders = () => {
                     <div className="space-y-4">
                       {selectedOrder.items.map((item, index) => (
                         <div key={index} className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
-                          <img
-                            src={
+                          <ImageWithFallback
+                            src={resolveImageUrl(
                               item.item?.photo ||
                               item.item?.image ||
                               item.item?.image_url ||
@@ -516,12 +585,9 @@ const Orders = () => {
                               item.photo ||
                               item.image ||
                               '/placeholder-image.jpg'
-                            }
+                            )}
                             alt={item.item?.name || item.name || 'Product'}
-                            className="w-16 h-16 object-cover rounded-lg"
-                            onError={(e) => {
-                              e.target.src = '/placeholder-image.jpg';
-                            }}
+                            className="w-16 h-16 rounded-lg"
                           />
                           <div className="flex-1">
                             <h4 className="font-medium text-gray-900">{item.item?.name || item.item?.title || item.item?.product_name || 'Unknown Item'}</h4>
@@ -580,7 +646,52 @@ const Orders = () => {
             </div>
           </div>
         )}
+        </div>
       </div>
+      {/* Pay Now Phone Prompt */}
+      {payDialog.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl p-6">
+            <h4 className="text-lg font-semibold text-gray-900 mb-2">Enter M-Pesa Phone</h4>
+            <p className="text-sm text-gray-600 mb-4">We will send a payment request to this number.</p>
+            <input
+              type="tel"
+              value={payDialog.phone}
+              onChange={(e) => setPayDialog({ ...payDialog, phone: e.target.value, error: '' })}
+              onBlur={() => setPayDialog((d) => ({ ...d, phone: normalizePhone(d.phone) }))}
+              placeholder="07XXXXXXXX, 01XXXXXXXX or 2547/2541XXXXXXXX"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+            />
+            {!!payDialog.error && (
+              <p className="text-red-600 text-sm mt-2">{payDialog.error}</p>
+            )}
+            <div className="mt-6 flex justify-end space-x-3">
+              <button
+                onClick={() => setPayDialog({ open: false, orderId: null, amount: 0, phone: '', error: '' })}
+                className="px-4 py-2 text-sm rounded-lg border hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const normalized = normalizePhone(payDialog.phone);
+                  if (!isValidKenyaMobile(normalized)) {
+                    setPayDialog((d) => ({ ...d, error: 'Enter a valid Kenyan mobile (07/01/254).' }));
+                    return;
+                  }
+                  setPayDialog((d) => ({ ...d, open: false }));
+                  await handlePayment(payDialog.orderId, payDialog.amount, normalized);
+                }}
+                className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700"
+              >
+                Send Payment Request
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Footer />
     </div>
   );
 };
