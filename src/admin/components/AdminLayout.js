@@ -26,7 +26,6 @@ const AdminLayout = () => {
     { icon: <FaClipboardList />, label: 'Orders', id: 'orders', path: '/admin/orders' },
     { icon: <FaBox />, label: 'Categories', id: 'categories', path: '/admin/categories' },
     { icon: <FaComments />, label: 'Contacts', id: 'contacts', path: '/admin/contacts' },
-    { icon: <FaQuestionCircle />, label: 'Inquiries', id: 'inquiries', path: '/admin/inquiries' },
     { icon: <FaEnvelope />, label: 'Newsletter', id: 'newsletter', path: '/admin/newsletter' },
     { icon: <FaCog />, label: 'Settings', id: 'settings', path: '/admin/settings' },
   ]

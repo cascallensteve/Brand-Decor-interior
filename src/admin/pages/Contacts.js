@@ -14,6 +14,7 @@ const Contacts = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
   const { getToken } = useAuth();
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     // Initialize from cache first
@@ -29,18 +30,24 @@ const Contacts = () => {
   const fetchContacts = async () => {
     try {
       setLoading(true);
+      setErrorMsg('');
       const token = getToken?.();
       if (!token) {
-        toast.error('Please log in as admin to view contacts');
+        const msg = 'Please log in as admin to view contacts';
+        setErrorMsg(msg);
+        toast.error(msg);
         return;
       }
 
       const contactsData = await getAllContacts(token);
+      console.log('Contacts fetched:', Array.isArray(contactsData) ? contactsData.length : 'non-array', contactsData);
       setContacts(contactsData || []);
       setCachedContacts?.(contactsData || []);
     } catch (error) {
       console.error('Error fetching contacts:', error);
-      toast.error(error.message || 'Failed to fetch contacts');
+      const msg = error.message || 'Failed to fetch contacts';
+      setErrorMsg(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -109,6 +116,17 @@ const Contacts = () => {
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Contact Inquiries</h1>
         <p className="text-gray-600">Manage customer contact inquiries and messages</p>
       </div>
+
+      {/* Error Banner */}
+      {errorMsg && (
+        <div className="mb-4 p-4 rounded-lg border border-red-200 bg-red-50 text-red-700 flex items-start justify-between">
+          <div>
+            <p className="font-semibold">Unable to load contacts</p>
+            <p className="text-sm mt-1">{errorMsg}</p>
+          </div>
+          <button onClick={fetchContacts} className="ml-4 px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700">Retry</button>
+        </div>
+      )}
 
       {/* Search and Filter Controls */}
       <div className="mb-6 flex flex-col sm:flex-row gap-4">

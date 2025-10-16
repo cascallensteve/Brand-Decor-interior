@@ -20,6 +20,68 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 15000) => {
   }
 };
 
+// Subscribe to Newsletter
+export const subscribeNewsletter = async (email) => {
+  try {
+    if (!email) throw new Error('Email is required');
+    const url = `${API_BASE_URL}/newsletters/subscribe`; // backend 404s on trailing slash
+    let lastErr = 'Failed to subscribe';
+
+    // Attempt 1: JSON
+    const resJson = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ email })
+    }, 15000);
+    let contentType = resJson.headers.get('content-type') || '';
+    let isJson = contentType.includes('application/json');
+    let data = null;
+    try { data = isJson ? await resJson.json() : null; } catch (_) {}
+    if (resJson.ok) {
+      return data || { message: 'Subscribed successfully!' };
+    }
+    // Capture error for JSON attempt
+    if (!isJson) {
+      try { lastErr = await resJson.text(); } catch (_) { lastErr = `${resJson.status} ${resJson.statusText}`; }
+    } else {
+      lastErr = data?.message || data?.detail || `${resJson.status} ${resJson.statusText}`;
+    }
+    const lower1 = String(lastErr).toLowerCase();
+    if (lower1.includes('already')) {
+      return { message: 'You are already subscribed!' };
+    }
+
+    // Attempt 2 (compat): form-urlencoded if JSON was rejected
+    if (resJson.status === 400 || resJson.status === 415) {
+      const resForm = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'Accept': 'application/json' },
+        body: new URLSearchParams({ email })
+      }, 15000);
+      contentType = resForm.headers.get('content-type') || '';
+      isJson = contentType.includes('application/json');
+      data = null;
+      try { data = isJson ? await resForm.json() : null; } catch (_) {}
+      if (resForm.ok) {
+        return data || { message: 'Subscribed successfully!' };
+      }
+      if (!isJson) {
+        try { lastErr = await resForm.text(); } catch (_) { lastErr = `${resForm.status} ${resForm.statusText}`; }
+      } else {
+        lastErr = data?.message || data?.detail || `${resForm.status} ${resForm.statusText}`;
+      }
+      const lower2 = String(lastErr).toLowerCase();
+      if (lower2.includes('already')) {
+        return { message: 'You are already subscribed!' };
+      }
+    }
+
+    throw new Error(lastErr);
+  } catch (error) {
+    throw error;
+  }
+};
+
 // Admin Contacts APIs
 // Accepts either a raw token (preferred) or a prebuilt Authorization header string
 const resolveAdminAuthHeader = (input) => {
@@ -33,28 +95,42 @@ const resolveAdminAuthHeader = (input) => {
 
 export const getAllContacts = async (tokenOrHeader) => {
   try {
-    const authHeader = resolveAdminAuthHeader(tokenOrHeader);
-    if (!authHeader) throw new Error('No authentication token provided');
+    if (!tokenOrHeader) throw new Error('No authentication token provided');
+    const t = String(tokenOrHeader);
+    const candidates = t.startsWith('Bearer ') || t.startsWith('Token ')
+      ? [t]
+      : [`Token ${t}`, `Bearer ${t}`];
 
-    const response = await fetch(`${API_BASE_URL}/contacts`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': authHeader,
-      },
-    });
+    let lastRes = null;
+    let lastData = null;
+    for (const auth of candidates) {
+      const response = await fetch(`${API_BASE_URL}/newsletters/all-contacts`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': auth,
+        },
+      });
+      lastRes = response;
+      const contentType = response.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+      lastData = null;
+      try { lastData = isJson ? await response.json() : null; } catch (_) {}
 
-    if (!response.ok) {
-      let msg = `Failed to fetch contacts (${response.status})`;
-      try {
-        const err = await response.json();
-        msg = err.message || msg;
-      } catch (_) {}
-      throw new Error(msg);
+      if (response.ok) {
+        const data = lastData;
+        return Array.isArray(data) ? data : (data?.contacts || []);
+      }
+
+      if (response.status === 401 || response.status === 403) {
+        // try next auth scheme
+        continue;
+      }
+      break; // non-auth error, stop retrying
     }
-    const data = await response.json();
-    // Normalize to an array
-    return Array.isArray(data) ? data : (data.contacts || []);
+
+    const msg = lastData?.message || lastData?.detail || `${lastRes?.status || ''} ${lastRes?.statusText || ''}`.trim() || 'Failed to fetch contacts';
+    throw new Error(msg);
   } catch (error) {
     throw error;
   }
@@ -63,27 +139,40 @@ export const getAllContacts = async (tokenOrHeader) => {
 export const getContactDetails = async (contactId, tokenOrHeader) => {
   try {
     if (!contactId) throw new Error('Contact ID is required');
-    const authHeader = resolveAdminAuthHeader(tokenOrHeader);
-    if (!authHeader) throw new Error('No authentication token provided');
+    if (!tokenOrHeader) throw new Error('No authentication token provided');
+    const t = String(tokenOrHeader);
+    const candidates = t.startsWith('Bearer ') || t.startsWith('Token ')
+      ? [t]
+      : [`Token ${t}`, `Bearer ${t}`];
 
-    const response = await fetch(`${API_BASE_URL}/contacts/${contactId}/`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': authHeader,
-      },
-    });
+    let lastRes = null;
+    let lastData = null;
+    for (const auth of candidates) {
+      const response = await fetch(`${API_BASE_URL}/newsletters/contact-details/${contactId}/`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': auth,
+        },
+      });
+      lastRes = response;
+      const contentType = response.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+      lastData = null;
+      try { lastData = isJson ? await response.json() : null; } catch (_) {}
 
-    if (!response.ok) {
-      let msg = `Failed to fetch contact details (${response.status})`;
-      try {
-        const err = await response.json();
-        msg = err.message || msg;
-      } catch (_) {}
-      throw new Error(msg);
+      if (response.ok) {
+        const data = lastData;
+        return data?.contact || data;
+      }
+      if (response.status === 401 || response.status === 403) {
+        continue; // try next scheme
+      }
+      break;
     }
-    const data = await response.json();
-    return data.contact || data;
+
+    const msg = lastData?.message || lastData?.detail || `${lastRes?.status || ''} ${lastRes?.statusText || ''}`.trim() || 'Failed to fetch contact details';
+    throw new Error(msg);
   } catch (error) {
     throw error;
   }

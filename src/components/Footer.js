@@ -1,8 +1,33 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
+import { toast } from 'react-toastify';
+import { subscribeNewsletter } from '../services/api';
 
 const Footer = () => {
   // const { darkMode } = useTheme(); // Available for future use
+  const [email, setEmail] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const subscribe = async (e) => {
+    e?.preventDefault?.();
+    const trimmed = email.trim();
+    // Basic email validation
+    const isValid = /[^@\s]+@[^@\s]+\.[^@\s]+/.test(trimmed);
+    if (!isValid) {
+      toast.error('Please enter a valid email address.');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      const data = await subscribeNewsletter(trimmed);
+      toast.success(data?.message || 'Subscribed successfully!');
+      setEmail('');
+    } catch (err) {
+      toast.error(err.message || 'Failed to subscribe. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
   
   return (
     <footer className="bg-white dark:bg-gray-900 transition-colors">
@@ -55,6 +80,43 @@ const Footer = () => {
               </div>
             </div>
 
+          </div>
+        </div>
+      </div>
+
+      {/* Newsletter Subscribe */}
+      <div className="px-4 sm:px-6 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-700 transition-colors">
+        <div className="max-w-7xl mx-auto py-8">
+          <div className="rounded-2xl bg-orange-50 dark:bg-gray-800/60 p-6 sm:p-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-center">
+              <div className="lg:col-span-2">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white">Subscribe to our Newsletter</h3>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">Get the latest deals, new arrivals, and design tips delivered to your inbox.</p>
+              </div>
+              <form onSubmit={subscribe} className="w-full">
+                <div className="flex rounded-lg shadow-sm overflow-hidden border border-orange-200 bg-white dark:bg-gray-900 dark:border-gray-700">
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Enter your email"
+                    className="w-full px-4 py-3 text-sm outline-none bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-400"
+                    disabled={submitting}
+                    required
+                  />
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="px-5 py-3 text-sm font-medium bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-60"
+                  >
+                    {submitting ? 'Subscribing...' : 'Subscribe'}
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  By subscribing, you agree to receive marketing emails. You can unsubscribe at any time.
+                </p>
+              </form>
+            </div>
           </div>
         </div>
       </div>
