@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react';
-import { FaBox, FaUsers, FaShoppingCart, FaDollarSign, FaDownload, FaCalendarWeek } from 'react-icons/fa';
+import { FaBox, FaUsers, FaShoppingCart, FaMoneyBillWave, FaDownload, FaCalendarWeek } from 'react-icons/fa';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { useAdminData } from '../../context/AdminDataContext';
 
 const Dashboard = () => {
@@ -36,6 +38,31 @@ const Dashboard = () => {
   }, [orders]);
   const ordersLoading = loading; // share context loading state for simplicity
 
+  // Robust total calculator for orders
+  const calculateOrderTotal = (order) => {
+    if (!order) return 0;
+    const num = (v) => {
+      if (v == null) return 0;
+      // Convert values like 'KES 12,500.00' or '12,500' to 12500
+      const s = String(v).replace(/[^0-9.]/g, '');
+      const parsed = parseFloat(s);
+      return isNaN(parsed) ? 0 : parsed;
+    };
+    const direct = num(order.total_price) || num(order.total_amount) || num(order.total) || num(order.amount);
+    if (direct > 0) return direct;
+    // Some backends might include items; sum if present
+    const items = Array.isArray(order.items) ? order.items : [];
+    const itemsTotal = items.reduce((sum, it) => {
+      const price = num(it?.item?.price || it?.price || it?.unit_price);
+      const qty = num(it?.quantity) || 1;
+      return sum + price * qty;
+    }, 0);
+    const shipping = num(order.shipping_cost || order.shipping);
+    const tax = num(order.tax_amount || order.tax);
+    const total = itemsTotal + shipping + tax;
+    return total > 0 ? total : 0;
+  };
+
   // CSV Download function (alternative to PDF)
   const downloadOrdersCSV = () => {
     if (recentOrders.length === 0) return;
@@ -51,7 +78,7 @@ const Dashboard = () => {
           `${order.shipping.first_name} ${order.shipping.last_name}` : 'N/A')} (${order.user_email || order.customer_email || order.user?.email || order.shipping?.email || 'No email'})`,
       new Date(order.created_at || order.date || order.order_date).toLocaleDateString(),
       order.status || 'Pending',
-      `KES ${(order.total_amount || order.total || 0).toLocaleString()}`
+      `KES ${calculateOrderTotal(order).toLocaleString()}`
     ]);
     
     // Convert to CSV format
@@ -72,67 +99,70 @@ const Dashboard = () => {
     document.body.removeChild(link);
   };
   
-  // Print function for orders
+  // Print/download PDF for orders (no new window)
   const printOrders = () => {
-    const printWindow = window.open('', '_blank');
-    const printContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Brand Decor - Recent Orders</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 20px; }
-          h1 { color: #ea580c; text-align: center; }
-          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-          th { background-color: #ea580c; color: white; }
-          tr:nth-child(even) { background-color: #f2f2f2; }
-          .header { text-align: center; margin-bottom: 20px; }
-          .date { color: #666; font-size: 14px; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>Brand Decor - Recent Orders</h1>
-          <p class="date">Last 7 Days | Generated on: ${new Date().toLocaleDateString()}</p>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Order ID</th>
-              <th>Customer</th>
-              <th>Date</th>
-              <th>Status</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${recentOrders.map(order => `
-              <tr>
-                <td>#${order.id || order.order_id || 'N/A'}</td>
-                <td>${order.user_name || order.customer_name || 'N/A'}</td>
-                <td>${new Date(order.created_at || order.date || order.order_date).toLocaleDateString()}</td>
-                <td>${order.status || 'Pending'}</td>
-                <td>KES ${(order.total_amount || order.total || 0).toLocaleString()}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </body>
-      </html>
-    `;
-    
-    printWindow.document.write(printContent);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
+    if (recentOrders.length === 0) return;
+    const doc = new jsPDF('p', 'pt', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    // Header
+    doc.setFontSize(18);
+    doc.text('Brand Decor - Recent Orders', 40, 50);
+    doc.setFontSize(10);
+    doc.text(`Last 5 Transactions | Generated on: ${new Date().toLocaleDateString()}`, 40, 68);
+
+    // Table data
+    const head = [['Order ID', 'Customer', 'Date', 'Status', 'Total (KES)']];
+    const body = recentOrders.map(order => {
+      const orderId = `#${order.id || order.order_id || 'N/A'}`;
+      const firstName = order.user?.first_name || order.shipping?.first_name || '';
+      const lastName = order.user?.last_name || order.shipping?.last_name || '';
+      const customerName = order.user_name || order.customer_name || `${firstName} ${lastName}`.trim() || 'N/A';
+      const dateStr = new Date(order.created_at || order.date || order.order_date).toLocaleDateString();
+      const status = order.status || 'Pending';
+      const totalKES = `KES ${calculateOrderTotal(order).toLocaleString()}`;
+      return [orderId, customerName, dateStr, status, totalKES];
+    });
+
+    autoTable(doc, {
+      head,
+      body,
+      startY: 90,
+      margin: { left: 40, right: 40 },
+      tableWidth: 'auto',
+      styles: { fontSize: 9, cellPadding: 4, overflow: 'linebreak' },
+      headStyles: { fillColor: [234, 88, 12], textColor: 255 }, // brand orange
+      alternateRowStyles: { fillColor: [249, 250, 251] },
+      columnStyles: {
+        0: { cellWidth: 70 },   // Order ID
+        1: { cellWidth: 160 },  // Customer
+        2: { cellWidth: 80 },   // Date
+        3: { cellWidth: 80 },   // Status
+        4: { cellWidth: 90, halign: 'right' }, // Total
+      }
+    });
+
+    // Footer
+    const addFooter = () => {
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(9);
+        doc.setTextColor(120);
+        doc.text('Brand Decor Furniture • branddecor.ke', 40, doc.internal.pageSize.getHeight() - 30);
+        doc.text(`Page ${i} of ${pageCount}`, pageWidth - 100, doc.internal.pageSize.getHeight() - 30);
+      }
+    };
+    addFooter();
+
+    // Trigger download
+    doc.save(`brand-decor-recent-orders-${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   const stats = [
     { title: 'Total Products', value: productCount ?? '—', icon: <FaBox className="text-2xl text-blue-500" />, change: '' },
     { title: 'Total Users', value: userCount ?? '—', icon: <FaUsers className="text-2xl text-green-500" />, change: '' },
     { title: 'Recent Orders', value: recentOrders.length, icon: <FaShoppingCart className="text-2xl text-yellow-500" />, change: 'Last 5 transactions' },
-    { title: 'Recent Revenue', value: `KES ${recentOrders.reduce((sum, order) => sum + (order.total_amount || order.total || 0), 0).toLocaleString()}`, icon: <FaDollarSign className="text-2xl text-purple-500" />, change: 'Last 5 transactions' },
+    { title: 'Recent Revenue', value: `KES ${recentOrders.reduce((sum, order) => sum + calculateOrderTotal(order), 0).toLocaleString()}`, icon: <FaMoneyBillWave className="text-2xl text-purple-500" />, change: 'Last 5 transactions' },
   ];
 
   return (
@@ -253,7 +283,7 @@ const Dashboard = () => {
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
-                        KES ${(order.total_amount || order.total || 0).toLocaleString()}
+                        KES {calculateOrderTotal(order).toLocaleString()}
                       </td>
                     </tr>
                   );
