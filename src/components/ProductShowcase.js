@@ -7,7 +7,7 @@ const ProductShowcase = () => {
   const sectionRef = useRef(null);
 
   const [selectedProduct, setSelectedProduct] = useState(null);
-  const [cartMessage, setCartMessage] = useState(""); // ✅ feedback message
+  const [addedToast, setAddedToast] = useState(false); // ✅ inline toast flag
 
   const { addToCart } = useCart(); // ✅ from context
 
@@ -29,8 +29,8 @@ const ProductShowcase = () => {
 
   const handleAddToCart = (product) => {
     addToCart(product); // ✅ add via CartContext
-    setCartMessage(`${product.title} added to cart!`);
-    setTimeout(() => setCartMessage(""), 2000);
+    setAddedToast(true);
+    setTimeout(() => setAddedToast(false), 2000);
   };
 
   const handleBack = () => {
@@ -57,12 +57,7 @@ const ProductShowcase = () => {
   return (
     <div ref={sectionRef} className="py-16 px-6 bg-gray-50">
       <div className="max-w-7xl mx-auto">
-        {/* ✅ cart message */}
-        {cartMessage && (
-          <div className="mb-6 text-green-600 font-semibold bg-green-100 border border-green-300 rounded-lg p-3 text-center shadow-sm">
-            {cartMessage}
-          </div>
-        )}
+        {/* inline toast only in details view; global message removed */}
 
         {!selectedProduct ? (
           // 🔹 Product List View
@@ -131,7 +126,7 @@ const ProductShowcase = () => {
           </div>
         ) : (
           // 🔹 Product Details View
-          <div className="bg-white p-8 rounded-3xl shadow-lg text-center">
+          <div className="relative bg-white p-8 rounded-3xl shadow-lg text-center">
             <img
               src={selectedProduct.img}
               alt={selectedProduct.title}
@@ -160,6 +155,13 @@ const ProductShowcase = () => {
                 Back
               </button>
             </div>
+
+            {/* Inline Toast Positioned Near Buttons */}
+            {addedToast && (
+              <div className="absolute left-1/2 -translate-x-1/2 bottom-8 bg-black text-white text-xs md:text-sm px-3 py-2 rounded-md shadow-lg pointer-events-none">
+                Added to cart
+              </div>
+            )}
           </div>
         )}
       </div>

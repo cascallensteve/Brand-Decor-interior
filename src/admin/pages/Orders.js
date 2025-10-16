@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { 
   FaShoppingBag, 
   FaClock, 
@@ -35,6 +35,7 @@ const Orders = () => {
   const [selectedOrderForStatus, setSelectedOrderForStatus] = useState(null);
   const [newStatus, setNewStatus] = useState('');
   const { getToken } = useAuth();
+  const [itemDetailsCache, setItemDetailsCache] = useState({});
 
   // Mock orders data for now - retained as fallback example (not used when cache exists)
   const mockOrders = [
@@ -161,6 +162,100 @@ const Orders = () => {
     }
   };
 
+  // Prefetch item details (name, price, image) for orders list (when API returns only IDs)
+  useEffect(() => {
+    if (!Array.isArray(orders) || orders.length === 0) return;
+    const ids = new Set();
+    orders.forEach((o) => {
+      (o?.items || []).forEach((it) => {
+        const id = typeof it?.item === 'number'
+          ? it.item
+          : (typeof it?.item?.id === 'number' ? it.item.id : null);
+        if (id && !itemDetailsCache[id]) ids.add(id);
+      });
+    });
+    const toFetch = Array.from(ids).slice(0, 50);
+    if (toFetch.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const token = getToken?.();
+      for (const id of toFetch) {
+        try {
+          const details = await getItemDetails(id, token);
+          const name = details?.name || details?.title || details?.product_name || `Item ${id}`;
+          const rawPrice = details?.regular_price ?? details?.price ?? details?.amount ?? details?.cost ?? details?.unit_price;
+          const price = rawPrice != null ? parseFloat(rawPrice) : 0;
+          const image = details?.photo || details?.image || details?.image_url || (Array.isArray(details?.images) ? (details.images[0]?.src || details.images[0]?.url || details.images[0]) : null);
+          if (cancelled) break;
+          setItemDetailsCache((prev) => ({ 
+            ...prev, 
+            [id]: {
+              name,
+              price: isNaN(price) ? 0 : price,
+              image
+            }
+          }));
+        } catch (_) {
+          // ignore individual failures
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [orders]);
+
+  // Resolve image URL and provide a non-flicker image component
+  const PLACEHOLDER = '/placeholder-image.jpg';
+  const resolveImageUrl = (url) => {
+    if (!url || typeof url !== 'string') return PLACEHOLDER;
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:image')) return url;
+    if (url.startsWith('/')) return url;
+    return url;
+  };
+
+  const ImageWithFallback = ({ src, alt, className }) => {
+    const [loaded, setLoaded] = useState(false);
+    const [imgSrc, setImgSrc] = useState(resolveImageUrl(src));
+    return (
+      <div className={className} style={{ position: 'relative', overflow: 'hidden' }}>
+        {!loaded && <div className="absolute inset-0 bg-gray-200 animate-pulse" />}
+        <img
+          src={imgSrc}
+          alt={alt}
+          loading="lazy"
+          onLoad={() => setLoaded(true)}
+          onError={(e) => {
+            if (imgSrc !== PLACEHOLDER) setImgSrc(PLACEHOLDER);
+          }}
+          className={`w-full h-full object-cover ${loaded ? 'opacity-100' : 'opacity-0'} transition-opacity duration-300`}
+        />
+      </div>
+    );
+  };
+
+  // Item helpers to get name/price/image robustly, preferring cache
+  const extractId = (it) => (typeof it?.item === 'number' ? it.item : (typeof it?.item?.id === 'number' ? it.item.id : null));
+  const getItemName = (it) => {
+    const id = extractId(it);
+    const cached = id ? itemDetailsCache[id] : null;
+    if (cached?.name) return cached.name;
+    const fallback = it?.item?.name || it?.item?.title || it?.name || it?.title;
+    if (fallback && String(fallback).trim() !== '') return fallback;
+    return `Item ${id || ''}`.trim();
+  };
+  const getItemUnitPrice = (it) => {
+    const id = extractId(it);
+    const cached = id ? itemDetailsCache[id] : null;
+    const raw = cached?.price ?? it?.item?.price ?? it?.price ?? it?.unit_price ?? 0;
+    const price = parseFloat(raw);
+    return isNaN(price) ? 0 : price;
+  };
+  const getItemImage = (it) => {
+    const id = extractId(it);
+    const cached = id ? itemDetailsCache[id] : null;
+    const candidate = cached?.image || it?.item?.photo || it?.item?.image || it?.item?.image_url || it?.photo || it?.image || PLACEHOLDER;
+    return resolveImageUrl(candidate);
+  };
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'pending':
@@ -200,12 +295,74 @@ const Orders = () => {
     });
   };
 
+  // Compute order total with multiple backend field fallbacks
+  const calculateTotal = (order) => {
+    if (!order) return 0;
+    const num = (v) => (v != null && !isNaN(parseFloat(v)) ? parseFloat(v) : 0);
+    // Common API fields
+    const direct = num(order.total_price) || num(order.total_amount) || num(order.total) || num(order.amount);
+    if (direct > 0) return direct;
+    // Sum from items
+    const items = Array.isArray(order.items) ? order.items : [];
+    const itemsTotal = items.reduce((sum, it) => {
+      const price = num(it?.item?.price || it?.price || it?.unit_price);
+      const qty = num(it?.quantity) || 1;
+      return sum + price * qty;
+    }, 0);
+    const shipping = num(order.shipping_cost || order.shipping);
+    const tax = num(order.tax_amount || order.tax);
+    const total = itemsTotal + shipping + tax;
+    return total > 0 ? total : 0;
+  };
+
   const handleViewOrder = async (orderId) => {
     try {
       setDetailsLoading(true);
       const token = await getToken();
       const orderDetails = await getOrderDetails(orderId, token);
-      setSelectedOrder(orderDetails);
+
+      // Enrich items with exact name, unit price, and image
+      const enrichItems = async (items) => {
+        const list = Array.isArray(items) ? items : [];
+        return Promise.all(
+          list.map(async (it) => {
+            const id = extractId(it);
+            let cached = id ? itemDetailsCache[id] : null;
+            let details = null;
+            if (!cached && id) {
+              try {
+                details = await getItemDetails(id, token);
+              } catch (_) {}
+            }
+            const name = cached?.name || details?.name || details?.title || details?.product_name || it?.item?.name || it?.name || `Item ${id || ''}`.trim();
+            const rawPrice =
+              (cached?.price != null ? cached.price : undefined) ??
+              details?.regular_price ?? details?.price ?? details?.amount ?? details?.cost ?? details?.unit_price ??
+              it?.item?.price ?? it?.price ?? it?.unit_price ?? 0;
+            const price = isNaN(parseFloat(rawPrice)) ? 0 : parseFloat(rawPrice);
+            const imageCandidate =
+              cached?.image ||
+              details?.photo || details?.image || details?.image_url ||
+              (Array.isArray(details?.images) ? (details.images[0]?.src || details.images[0]?.url || details.images[0]) : null) ||
+              it?.item?.photo || it?.item?.image || it?.item?.image_url || it?.photo || it?.image || PLACEHOLDER;
+
+            return {
+              ...it,
+              item: {
+                ...(typeof it?.item === 'object' ? it.item : { id }),
+                id,
+                name,
+                price,
+                image: resolveImageUrl(imageCandidate),
+              },
+            };
+          })
+        );
+      };
+
+      const enrichedItems = await enrichItems(orderDetails.items);
+      const enrichedOrder = { ...orderDetails, items: enrichedItems };
+      setSelectedOrder(enrichedOrder);
       setShowOrderModal(true);
     } catch (error) {
       console.error('Error fetching order details:', error);
@@ -269,11 +426,12 @@ const Orders = () => {
   ];
 
   const filteredOrders = orders.filter(order => {
+    const name = `${order?.user?.first_name || order?.shipping?.first_name || ''} ${order?.user?.last_name || order?.shipping?.last_name || ''}`.trim();
+    const email = order?.user?.email || order?.shipping?.email || '';
     const matchesSearch = 
-      order.id.toString().includes(searchTerm) ||
-      order.user.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.user.last_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.user.email.toLowerCase().includes(searchTerm.toLowerCase());
+      (order?.id?.toString() || '').includes(searchTerm) ||
+      name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      email.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
     
@@ -418,10 +576,14 @@ const Orders = () => {
                         </div>
                         <div className="ml-4">
                           <div className="text-sm font-medium text-gray-900">
-                            {order.user.first_name} {order.user.last_name}
+                            {(order?.user?.first_name && order?.user?.last_name)
+                              ? `${order.user.first_name} ${order.user.last_name}`
+                              : (order?.shipping?.first_name || order?.shipping?.last_name
+                                  ? `${order?.shipping?.first_name || ''} ${order?.shipping?.last_name || ''}`.trim()
+                                  : 'N/A')}
                           </div>
                           <div className="text-sm text-gray-500">
-                            {order.user.email}
+                            {order?.user?.email || order?.shipping?.email || 'No email'}
                           </div>
                         </div>
                       </div>
@@ -433,10 +595,17 @@ const Orders = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {order.items.length} item{order.items.length !== 1 ? 's' : ''}
+                      {(() => {
+                        const cnt = order?.items?.length || 0;
+                        if (cnt === 0) return 'No items';
+                        const first = order.items[0];
+                        const name = getItemName(first);
+                        const qty = first?.quantity || 1;
+                        return `${name} (x${qty})${cnt > 1 ? ` +${cnt - 1} more` : ''}`;
+                      })()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      KES {order.total?.toLocaleString() || 'N/A'}
+                      KES {calculateTotal(order).toLocaleString()}
                   </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {formatDate(order.created_at)}
@@ -489,20 +658,17 @@ const Orders = () => {
                     <div className="space-y-4">
                       {selectedOrder.items.map((item, index) => (
                         <div key={index} className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
-                          <img
-                            src={item.item?.image || '/placeholder-image.jpg'}
-                            alt={item.item?.name || 'Product'}
-                            className="w-16 h-16 object-cover rounded-lg"
-                            onError={(e) => {
-                              e.target.src = '/placeholder-image.jpg';
-                            }}
+                          <ImageWithFallback
+                            src={getItemImage(item)}
+                            alt={getItemName(item)}
+                            className="w-16 h-16 rounded-lg"
                           />
                           <div className="flex-1">
-                            <h4 className="font-medium text-gray-900">{item.item?.name || 'Unknown Item'}</h4>
+                            <h4 className="font-medium text-gray-900">{getItemName(item)}</h4>
                             <p className="text-sm text-gray-600">Quantity: {item.quantity}</p>
-                            <p className="text-sm text-gray-500">Unit Price: KES {item.item?.price?.toLocaleString() || 'N/A'}</p>
+                            <p className="text-sm text-gray-500">Unit Price: KES {(item.item?.price || item.price || 0).toLocaleString()}</p>
                             <p className="text-lg font-semibold text-orange-500">
-                              Total: KES {item.item?.price ? (item.item.price * item.quantity).toLocaleString() : 'N/A'}
+                              Total: KES {(((item.item?.price || item.price || 0)) * (item.quantity || 1)).toLocaleString()}
                             </p>
                           </div>
                         </div>

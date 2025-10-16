@@ -8,6 +8,7 @@ const NewArrivals = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [quantity, setQuantity] = useState(1);
+  const [addedProductId, setAddedProductId] = useState(null);
   const sectionRef = useRef(null);
   const { addToCart } = useCart();
 
@@ -149,6 +150,8 @@ const NewArrivals = () => {
     for (let i = 0; i < qty; i++) {
       addToCart(product);
     }
+    setAddedProductId(product.id);
+    setTimeout(() => setAddedProductId(null), 2000);
   };
 
   const StarRating = ({ rating, reviews, showReviews = false }) => {
@@ -263,6 +266,13 @@ const NewArrivals = () => {
               >
                 Add To Cart
               </button>
+
+              {/* Inline Toast Positioned Near Button */}
+              {addedProductId === product.id && (
+                <div className="absolute left-1/2 -translate-x-1/2 bottom-20 bg-black text-white text-xs md:text-sm px-3 py-2 rounded-md shadow-lg pointer-events-none">
+                  Added to cart
+                </div>
+              )}
             </div>
           ))}
         </div>

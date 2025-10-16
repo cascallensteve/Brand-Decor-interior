@@ -6,7 +6,7 @@ export default function Settings() {
   const [settings, setSettings] = useState({
     siteName: 'BrandDecor',
     siteDescription: 'Modern Home Decor & Furniture',
-    currency: 'USD',
+    currency: 'KES',
     timezone: 'UTC',
     emailNotifications: true,
     pushNotifications: false,
@@ -119,6 +119,7 @@ export default function Settings() {
                   onChange={handleChange}
                   className="mt-1 block w-full rounded-md border border-gray-300 bg-white py-2 pl-3 pr-10 text-base focus:border-blue-500 focus:outline-none focus:ring-blue-500 sm:text-sm"
                 >
+                  <option value="KES">Kenyan Shilling (KES KSh)</option>
                   <option value="USD">US Dollar (USD $)</option>
                   <option value="EUR">Euro (EUR €)</option>
                   <option value="GBP">British Pound (GBP £)</option>

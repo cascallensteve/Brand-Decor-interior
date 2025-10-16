@@ -8,6 +8,7 @@ const ShopMain = () => {
   const [sortBy, setSortBy] = useState('Default');
   const [priceRange, setPriceRange] = useState([7500, 35000]);
   const [cartMessage, setCartMessage] = useState('');
+  const [addedProductId, setAddedProductId] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [quantity, setQuantity] = useState(1);
@@ -17,8 +18,9 @@ const ShopMain = () => {
     for (let i = 0; i < qty; i++) {
       addToCart(product);
     }
-    setCartMessage(`${product.name} added to cart!`);
-    setTimeout(() => setCartMessage(''), 3000);
+    // Local inline toast near the clicked product card
+    setAddedProductId(product.id);
+    setTimeout(() => setAddedProductId(null), 2000);
   };
 
   const openModal = (product) => {
@@ -239,11 +241,6 @@ const ShopMain = () => {
           
           {/* Cart Info */}
           <div className="flex items-center gap-4">
-            {cartMessage && (
-              <div className="bg-green-100 text-green-800 px-4 py-2 rounded-lg text-sm font-medium animate-pulse">
-                {cartMessage}
-              </div>
-            )}
             <div className="bg-black text-white px-4 py-2 rounded-lg font-medium">
               Cart ({getTotalItems()})
             </div>
@@ -358,7 +355,7 @@ const ShopMain = () => {
             {/* Product Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
               {paginatedProducts.map((product) => (
-                <div key={product.id} className="bg-white rounded-lg shadow-sm overflow-hidden group hover:shadow-lg transition-shadow duration-300">
+                <div key={product.id} className="relative bg-white rounded-lg shadow-sm overflow-hidden group hover:shadow-lg transition-shadow duration-300">
                   <div className="relative">
                     <img 
                       src={product.image} 
@@ -422,6 +419,13 @@ const ShopMain = () => {
                     >
                       Add to Cart
                     </button>
+
+                    {/* Inline Toast Positioned Near Button */}
+                    {addedProductId === product.id && (
+                      <div className="absolute left-1/2 -translate-x-1/2 bottom-20 bg-black text-white text-xs md:text-sm px-3 py-2 rounded-md shadow-lg pointer-events-none">
+                        Added to cart
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
