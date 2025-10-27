@@ -8,8 +8,16 @@ const AdminLayout = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
   const { user } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleLogout = () => {
     navigate('/admin/logout');
@@ -114,20 +122,39 @@ const AdminLayout = () => {
       {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top navbar */}
-        <header className="flex h-16 items-center justify-between border-b border-gray-200 bg-white px-6 shadow-sm lg:ml-64">
-          <button 
-            onClick={toggleSidebar}
-            className="rounded-md p-2 text-gray-500 hover:bg-gray-100 lg:hidden"
-          >
-            <FaBars className="h-6 w-6" />
-          </button>
+        <header 
+          className="flex h-24 items-center justify-between border-b border-gray-200 px-6 shadow-sm lg:ml-64 bg-cover bg-center relative"
+          style={{
+            backgroundImage: 'linear-gradient(135deg, rgba(16, 185, 129, 0.9) 0%, rgba(5, 150, 105, 0.9) 50%, rgba(4, 120, 87, 0.9) 100%), url(https://res.cloudinary.com/djksfayfu/image/upload/v1758518877/6248154_esmkro.jpg)',
+            backgroundBlendMode: 'multiply'
+          }}
+        >
+          {/* Left side - Timer and Menu Button */}
+          <div className="flex items-center space-x-4">
+            {/* Date and Time Display */}
+            <div className="hidden sm:flex flex-col items-start px-4 py-2 border-r border-gray-300">
+              <div className="text-sm font-semibold text-white">
+                {currentTime.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+              </div>
+              <div className="text-lg font-bold text-yellow-300">
+                {currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
+              </div>
+            </div>
+
+            <button 
+              onClick={toggleSidebar}
+              className="rounded-md p-2 text-white hover:bg-white hover:bg-opacity-20 lg:hidden"
+            >
+              <FaBars className="h-6 w-6" />
+            </button>
+          </div>
           
           <div className="flex items-center space-x-4">
             <div className="relative">
               <input
                 type="text"
                 placeholder="Search..."
-                className="rounded-lg border border-gray-300 py-2 pl-10 pr-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                className="rounded-lg border border-gray-300 py-2 pl-10 pr-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white bg-opacity-90"
               />
               <svg
                 className="absolute left-3 top-2.5 h-5 w-5 text-gray-400"
@@ -149,7 +176,7 @@ const AdminLayout = () => {
             <div className="relative">
               <button
                 onClick={() => setIsNotifOpen(!isNotifOpen)}
-                className="relative rounded-full p-2 text-gray-600 hover:bg-gray-100"
+                className="relative rounded-full p-2 text-white hover:bg-white hover:bg-opacity-20"
                 aria-label="Notifications"
               >
                 <FaBell className="h-5 w-5" />
@@ -185,16 +212,16 @@ const AdminLayout = () => {
             <div className="relative">
               <button
                 onClick={() => setIsProfileOpen(!isProfileOpen)}
-                className="flex items-center space-x-2 rounded-lg border border-gray-200 bg-white px-2 py-1 hover:bg-gray-50"
+                className="flex items-center space-x-2 rounded-lg border border-white bg-white bg-opacity-20 px-2 py-1 hover:bg-opacity-30 text-white"
               >
                 <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-blue-600 text-sm font-semibold text-white">
                   {getUserInitials()}
                 </div>
                 <div className="hidden sm:block text-left">
-                  <div className="text-sm font-medium text-gray-800 leading-tight">{displayName()}</div>
-                  <div className="text-xs text-gray-500 -mt-0.5">{user?.userType || 'admin'}</div>
+                  <div className="text-sm font-medium text-white leading-tight">{displayName()}</div>
+                  <div className="text-xs text-gray-100 -mt-0.5">{user?.userType || 'admin'}</div>
                 </div>
-                <FaChevronDown className="h-3.5 w-3.5 text-gray-500" />
+                <FaChevronDown className="h-3.5 w-3.5 text-white" />
               </button>
 
               {isProfileOpen && (

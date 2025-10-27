@@ -18,7 +18,7 @@ const MainHeader = () => {
     setIsMobileMenuOpen(!isMobileMenuOpen);
   };
   return (
-    <div className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 px-4 py-4 relative transition-colors">
+    <div className="sticky top-0 z-50 bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 px-4 py-4 relative transition-colors">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         {/* Logo */}
         <div className="flex items-center space-x-3">
