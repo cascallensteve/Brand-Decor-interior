@@ -1,0 +1,15 @@
+{
+  "short_name": "Brand Decor",
+  "name": "Brand Decor Interior Design",
+  "icons": [
+    {
+      "src": "logo.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#f97316",
+  "background_color": "#ffffff"
+}
